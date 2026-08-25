@@ -2,6 +2,10 @@
 
 A drop-in replacement for [Omarchy](https://omarchy.org/)'s built-in `Super + Space` menu (`omarchy.menu`) that adds **configurable search prefixes**:
 
+inspired by [omarchy-menu-plus](https://github.com/CarlOscarHMJ/omarchy-menu-plus)
+
+![Demo preview](demo-preview.gif)
+
 | Type this | What happens |
 |-----------|--------------|
 | `file:bashrc` | live whole-filesystem file search (via `locate`), opened with the file's default app |
@@ -32,7 +36,7 @@ omarchy plugin add https://github.com/BryonLewis/omarchy-menu-prefixes
 
   Without it, `file:` search just returns no results (nothing breaks).
 - `wl-copy`, `curl` — standard on an Omarchy install already.
-- **Network access** — currency conversion calls the free [Frankfurter API](https://frankfurter.dev/) (no API key). Offline, `!` queries just show no result. Web prefixes open URLs locally, so they work offline once the page is cached by your browser.
+- **Network access** — currency conversion calls the free [Frankfurter API](https://frankfurter.dev/) (no API key).
 
 ### Remove
 
