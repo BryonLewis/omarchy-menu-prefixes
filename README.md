@@ -8,7 +8,7 @@ A drop-in replacement for [Omarchy](https://omarchy.org/)'s built-in `Super + Sp
 | `g:data pipelines` | searches Google for "data pipelines" in your default browser |
 | `yt:lofi beats` | searches YouTube for "lofi beats" in your default browser |
 | `=4*23` | inline calculator — Enter copies the result to your clipboard |
-| `!420 usd to dkk` | live currency conversion (ECB rates) — Enter copies the result |
+| `!100 usd to dkk` | live currency conversion (ECB rates) — Enter copies the result |
 | `anything else` | normal app/menu search, completely unchanged |
 
 Every prefix — including `file:`, `g:`, `yt:`, `=`, and `!` — is defined in a single JSONC config file. Add your own prefixes for any website or any shell command, with your own icons. Everything else about the menu (apps, settings, power, fonts, dmenu mode, …) is stock `omarchy.menu`.
@@ -16,7 +16,7 @@ Every prefix — including `file:`, `g:`, `yt:`, `=`, and `!` — is defined in 
 ## Install
 
 ```
-omarchy plugin add https://github.com/<you>/omarchy-menu-prefixes
+omarchy plugin add https://github.com/BryonLewis/omarchy-menu-prefixes
 ```
 
 **This replaces your default Omarchy menu.** The plugin uses the same `clonedFrom` mechanism as `omarchy plugin clone`: enabling it automatically disables the stock `omarchy.menu` and repoints `Super + Space`, the taskbar menu button, and the `omarchy-menu` CLI at this plugin. No keybinding or config changes needed.
