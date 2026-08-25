@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "com.bryon.omarchy-menu-prefixes",
+  "name": "Omarchy Menu Prefixes",
+  "version": "1.0.0",
+  "author": "bryon",
+  "description": "The stock Omarchy menu plus configurable search prefixes: file: filesystem search, g:/yt: web searches, custom command prefixes (= calculator and ! currency included).",
+  "kinds": [
+    "menu",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "menu": "Menu.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Menu Prefixes",
+    "description": "Launches the Omarchy menu, with configurable search prefixes (file:, g:, yt:, and more)",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.menu"
+  }
+}
