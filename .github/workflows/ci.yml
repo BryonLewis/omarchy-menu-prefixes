@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Check out Omarchy validator
+        uses: actions/checkout@v4
+        with:
+          repository: basecamp/omarchy
+          ref: 7be59e1f4b7451d352d4673c560168290792590f
+          path: omarchy
+          sparse-checkout: bin/omarchy-plugin-validate
+          sparse-checkout-cone-mode: false
+
+      - name: Install lint tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        working-directory: plugin
+        run: shellcheck scripts/*.sh
+
+      - name: Lint JavaScript
+        working-directory: plugin
+        run: |
+          for f in PrefixModel.js MenuModel.js tests/*.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: Lint QML (brace balance)
+        working-directory: plugin
+        run: |
+          for f in *.qml; do
+            echo "Checking $f"
+            python3 - "$f" <<'EOF'
+          import sys
+
+          path = sys.argv[1]
+          text = open(path).read()
+          depth = 0
+          for ch in text:
+              if ch == "{":
+                  depth += 1
+              elif ch == "}":
+                  depth -= 1
+                  if depth < 0:
+                      print(f"{path}: unbalanced '}}'")
+                      sys.exit(1)
+          if depth != 0:
+              print(f"{path}: unbalanced braces (off by {depth})")
+              sys.exit(1)
+          EOF
+          done
+
+      - name: Run tests
+        working-directory: plugin
+        run: node --test tests/*.js
+
+      - name: Validate Omarchy plugin
+        run: ./omarchy/bin/omarchy-plugin-validate ./plugin

@@ -81,6 +81,7 @@ Item {
   // whenever the user's prefix config changes, and the async results below
   // belong to the last file/currency query kicked off by setFilter().
   property string prefixConfigPath: Quickshell.env("HOME") + "/.config/omarchy/extensions/omarchy-menu-prefixes.jsonc"
+  property var prefixMergedConfig: PrefixModel.defaultConfig()
   property var prefixTable: PrefixModel.normalizeTable(PrefixModel.defaultConfig())
   property var fileSearchRows: []
   property var fileSearchPendingQuery: null
@@ -317,28 +318,39 @@ Item {
   }
 
   function applyPrefixConfig(raw) {
-    root.prefixTable = PrefixModel.normalizeTable(
-      PrefixModel.mergeConfig(PrefixModel.defaultConfig(), PrefixModel.parseConfig(raw))
+    root.prefixMergedConfig = PrefixModel.mergeConfig(
+      PrefixModel.defaultConfig(), PrefixModel.parseConfig(raw)
     )
+    root.prefixTable = PrefixModel.normalizeTable(root.prefixMergedConfig)
     if (root.opened) root.rebuildDisplay()
+  }
+
+  function prefixRowLabel(kind, match) {
+    var prefixes = root.prefixMergedConfig && root.prefixMergedConfig.prefixes
+      ? root.prefixMergedConfig.prefixes : ({})
+    return PrefixModel.formatRowLabel(kind, match.entry, match.prefix, match.query, prefixes)
   }
 
   // Resolved relative to this QML file's own directory, so it keeps working
   // regardless of where the plugin is installed (clone vs. `plugin add`).
   readonly property string smartOpenScript: String(Qt.resolvedUrl("scripts/smart-open.sh")).replace(/^file:\/\//, "")
 
-  // Producer-side ceilings for async process stdout (currency HTTP body and
-  // provider enumerations). Keeps StdioCollector / SplitParser from growing
-  // without bound if a response or script floods the pipe.
+  // Producer-side ceilings for async process stdout (currency HTTP body,
+  // file-search results, provider enumerations). Every one of these pipelines
+  // ends in `head -c`, so StdioCollector / SplitParser cannot grow without
+  // bound when a response or a script floods the pipe. The menu's guard batch
+  // needs no ceiling: it discards each expression's own output and emits one
+  // short fixed-shape line per menu item.
   readonly property int currencyMaxBytes: 65536
+  readonly property int fileSearchMaxBytes: 262144
   readonly property int providerMaxBytes: 1048576
 
   // ------------------------------------------------------------- rows
 
-  function prefixActionRow(itemId, entry, label, detail, action) {
+  function prefixActionRow(itemId, kind, entry, label, detail, action) {
     return {
       itemId: itemId,
-      kind: "action",
+      kind: kind,
       icon: String(entry.fontIcon || ""),
       iconFont: "",
       appIcon: String(entry.appIcon || ""),
@@ -368,30 +380,32 @@ Item {
       var url = PrefixModel.expandUrl(match.entry.url, match.query)
       displayModel.append(root.prefixActionRow(
         "prefix.web",
+        "prefix.web",
         match.entry,
-        "Search " + (match.entry.label || match.prefix) + ' for "' + match.query + '"',
+        root.prefixRowLabel("web", match),
         url,
-        "omarchy launch browser " + Util.shellQuote(url)
+        ""
       ))
     } else if (match.kind === "cmd") {
       var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
       displayModel.append(root.prefixActionRow(
         "prefix.cmd",
+        "action",
         match.entry,
-        match.entry.label ? "Run " + match.entry.label : "Run command",
+        root.prefixRowLabel("cmd", match),
         command,
         command
       ))
     } else if (match.kind === "calc") {
       var calcResult = PrefixModel.evaluateCalc(match.query)
       if (calcResult !== null) {
-        var resultText = String(calcResult)
         displayModel.append(root.prefixActionRow(
           "prefix.calc",
+          "prefix.copy",
           match.entry,
-          resultText,
+          String(calcResult),
           match.prefix + match.query,
-          "printf '%s' " + Util.shellQuote(resultText) + " | wl-copy"
+          ""
         ))
       }
     } else if (match.kind === "currency") {
@@ -401,13 +415,13 @@ Item {
           && cached.from === parsed.from
           && cached.to === parsed.to
           && cached.amount === parsed.amount) {
-        var convertedText = cached.converted.toFixed(2) + " " + cached.to
         displayModel.append(root.prefixActionRow(
           "prefix.currency",
+          "prefix.copy",
           match.entry,
-          convertedText,
+          cached.converted.toFixed(2) + " " + cached.to,
           parsed.amount + " " + parsed.from + " → " + parsed.to,
-          "printf '%s' " + Util.shellQuote(convertedText) + " | wl-copy"
+          ""
         ))
       }
     }
@@ -443,11 +457,19 @@ Item {
     fileSearchProc.collected = ""
     fileSearchProc.fontIcon = match.entry.fontIcon || ""
     fileSearchProc.appIcon = match.entry.appIcon || ""
-    var quotedQuery = Util.shellQuote(match.query)
-    fileSearchProc.command = ["bash", "-lc",
-      "q=" + quotedQuery + "; if [[ -e $q ]]; then printf '%s\\n' \"$q\"; fi; "
-      + "locate " + (match.entry.caseInsensitive ? "-i " : "")
-      + "--limit " + match.entry.maxResults + " -- " + Util.shellQuote(pattern)]
+    // The query, the locate pattern, and the limit arrive as positional
+    // parameters ($1, $2, $3) rather than being spliced into the script text,
+    // so no quoting function stands between what was typed and what bash
+    // parses. The existence probe runs from $HOME to match the documented
+    // "absolute, or relative to $HOME" behavior, and always reports an
+    // absolute path so every row can be launched as a bare argv. `head -c`
+    // caps the pipeline at the producer.
+    fileSearchProc.command = ["bash", "-c",
+      'cd "$HOME" 2>/dev/null || cd /; {'
+      + ' if [ -e "$1" ]; then case $1 in /*) printf "%s\\n" "$1";; *) printf "%s/%s\\n" "$HOME" "$1";; esac; fi;'
+      + ' locate ' + (match.entry.caseInsensitive ? "-i " : "") + '--limit "$3" -- "$2" 2>/dev/null;'
+      + ' } | head -c ' + root.fileSearchMaxBytes,
+      "bash", match.query, pattern, String(match.entry.maxResults)]
     fileSearchProc.running = true
   }
 
@@ -457,13 +479,16 @@ Item {
     var seen = ({})
     for (var i = 0; i < lines.length; i++) {
       var path = lines[i].trim()
-      if (!path || seen[path]) continue
+      // The producer emits absolute paths only. Anything else is a fragment
+      // rather than a path — a filename carrying a newline split across two
+      // lines, or the tail the byte cap cut off — and cannot open anything.
+      if (!path || path.charAt(0) !== "/" || seen[path]) continue
       seen[path] = true
       var parts = path.split("/")
       var base = parts[parts.length - 1] || path
       rows.push({
         itemId: "filesearch." + rows.length,
-        kind: "action",
+        kind: "prefix.open",
         icon: fileSearchProc.fontIcon,
         iconFont: "",
         appIcon: fileSearchProc.appIcon,
@@ -473,7 +498,7 @@ Item {
         detail: path,
         path: path,
         childCount: 0,
-        action: Util.shellQuote(root.smartOpenScript) + " " + Util.shellQuote(path),
+        action: "",
         provider: "",
         score: 0,
         section: ""
@@ -486,16 +511,32 @@ Item {
   // -------------------------------------------------------- currency
 
   function startCurrencyConversion(parsed) {
+    // Already answered. Every keystroke re-enters here, and a query that only
+    // gained a trailing space or changed case parses to the same conversion —
+    // no reason to ask the network again for a rate we are holding.
+    var held = root.currencyResult
+    if (held && held.from === parsed.from && held.to === parsed.to && held.amount === parsed.amount) return
+
     if (currencyProc.running) {
       root.currencyPendingQuery = parsed
       return
     }
     root.currencyPendingQuery = null
+    // `from`/`to` are the ISO codes parseCurrencyQuery validated as exactly
+    // three letters, and `amount` is a parsed number.
     var url = "https://api.frankfurter.app/latest?amount=" + encodeURIComponent(parsed.amount) + "&from=" + parsed.from + "&to=" + parsed.to
     currencyProc.parsedQuery = parsed
-    currencyProc.command = ["bash", "-lc",
-      "curl -sL --max-time 5 --max-filesize " + root.currencyMaxBytes
-      + " " + Util.shellQuote(url) + " | head -c " + root.currencyMaxBytes]
+    // The URL is a positional parameter, not part of the script text. --proto
+    // and --proto-redir pin the whole exchange to https, so neither the
+    // request nor a redirect can be talked down to another scheme, and the
+    // response is bounded twice: --max-filesize refuses a declared body over
+    // the ceiling, and `head -c` truncates one that arrives chunked without a
+    // declared length.
+    currencyProc.command = ["bash", "-c",
+      'curl -s --fail --location --proto "=https" --proto-redir "=https"'
+      + ' --connect-timeout 3 --max-time 5 --max-filesize ' + root.currencyMaxBytes
+      + ' -- "$1" | head -c ' + root.currencyMaxBytes,
+      "bash", url]
     currencyProc.running = true
   }
 
@@ -983,6 +1024,8 @@ Item {
     var row = displayModel.get(index)
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true, fromPointer)
+    } else if (row.kind === "prefix.open" || row.kind === "prefix.web" || row.kind === "prefix.copy") {
+      root.applyPrefixRow(row)
     } else if (row.kind === "app") {
       var appId = row.appId
       var label = row.label
@@ -1035,6 +1078,42 @@ Item {
     opened = false
     filterText = ""
     root.runAction(action)
+  }
+
+  // Prefix results are launched as an argv rather than as a shell command
+  // string. The value a row carries — a path off the filesystem, a URL built
+  // around what was typed, a computed result — is handed to the program as one
+  // argument, so there is no shell in the path to reinterpret it and no
+  // quoting function whose correctness the launch depends on. `cmd` prefixes
+  // are the deliberate exception: a shell command line is exactly what the
+  // user configured there, and it still goes through runAction().
+  function applyPrefixRow(row) {
+    var kind = String(row.kind)
+    // Read the payload before the assignments below, which invalidate the row.
+    var payload = kind === "prefix.open" ? String(row.path)
+      : (kind === "prefix.web" ? String(row.detail) : String(row.label))
+
+    applySerial = requestSerial
+    opened = false
+    filterText = ""
+    root.launchPrefixRow(kind, payload)
+  }
+
+  function launchPrefixRow(kind, payload) {
+    if (!payload) return
+
+    if (kind === "prefix.open") {
+      // `bash <script> <path>`, not `bash -c`: the path is argv, and the
+      // launch does not depend on the plugin's files keeping their exec bit
+      // through whatever copied them into place.
+      Quickshell.execDetached(["bash", root.smartOpenScript, payload])
+    } else if (kind === "prefix.web") {
+      // `omarchy` lives outside the default PATH, so this one still needs a
+      // login shell — but the URL arrives as $1 rather than as script text.
+      Quickshell.execDetached(["bash", "-lc", 'omarchy launch browser "$1"', "bash", payload])
+    } else if (kind === "prefix.copy") {
+      Quickshell.execDetached(["bash", "-c", 'printf %s "$1" | wl-copy', "bash", payload])
+    }
   }
 
   function cancel() {

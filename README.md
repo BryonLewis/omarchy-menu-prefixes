@@ -35,8 +35,8 @@ omarchy plugin add https://github.com/BryonLewis/omarchy-menu-prefixes
   ```
 
   Without it, `file:` search just returns no results (nothing breaks).
-- `wl-copy`, `curl` — standard on an Omarchy install already.
-- **Network access** — currency conversion calls the free [Frankfurter API](https://frankfurter.dev/) (no API key).
+- `wl-copy`, `curl`, `python-gobject` — standard on an Omarchy install already. `python-gobject` is what resolves a file's default application for `file:` results; without it those rows fall back to plain `xdg-open`.
+- **Network access** — currency conversion calls the free [Frankfurter API](https://frankfurter.dev/) (no API key), over HTTPS only.
 
 ### Remove
 
@@ -135,6 +135,8 @@ Typing `w:hyprland` shows a single row — `Search Wikipedia for "hyprland"` —
 
 `kind: "cmd"` runs a shell command with your input. The row shows the expanded command as subtext; Enter runs it (through `bash -lc`, detached from the shell process).
 
+Optional **`rowLabel`** overrides the row text for `web` and `cmd` prefixes. Placeholders: `{label}` (entry label, or the prefix when empty), `{query}`, `{prefix}`. Without it, web rows read `Search Google for "…"` and cmd rows read `Run Terminal`.
+
 ```jsonc
 {
   "prefixes": {
@@ -152,9 +154,12 @@ Typing `w:hyprland` shows a single row — `Search Wikipedia for "hyprland"` —
              "cmd": "xdg-terminal-exec yt-dlp {query}" },
 
     // Search an Obsidian vault (ob:weather → opens Obsidian's search UI).
-    // {raw} sits inside the URI; change vault=Personal to your vault name.
+    // {query} goes inside the URI; change vault=Personal to your vault name.
+    // Note the quoting: the literal part is quoted and {query} supplies its
+    // own quotes, so the two join into one argument.
     "ob:": { "kind": "cmd", "label": "Obsidian", "appIcon": "obsidian",
-             "cmd": "xdg-open \"obsidian://search?vault=Personal&query={raw}\"" },
+             "rowLabel": "Search {label} for \"{query}\"",
+             "cmd": "xdg-open 'obsidian://search?vault=Personal&query='{query}" },
 
     // Treat the input itself as shell code ({raw} — no quoting):
     //   run:fastfetch  ->  runs fastfetch
@@ -169,9 +174,20 @@ Placeholder semantics:
 | Placeholder | Substitution | Use for |
 |-------------|--------------|---------|
 | `{query}` | input, shell-quoted as one argument (`ls -la` → `'ls -la'`) | passing the input to a program |
+| `{urlquery}` | input, URL-encoded *then* shell-quoted (`a b&c` → `'a%20b%26c'`) | putting the input inside a URI |
 | `{raw}` | input, verbatim | when the input *is* shell code or you need expansion |
 
-⚠️ **Security:** `cmd` prefixes run arbitrary commands with your user privileges. `{query}` is always quoted so the input can't inject shell syntax, but `{raw}` is not — only add prefixes you trust, and prefer `{query}`.
+Row label placeholders (`rowLabel` on `web`/`cmd` entries):
+
+| Placeholder | Substitution | Use for |
+|-------------|--------------|---------|
+| `{label}` | entry `label`, or the prefix when `label` is empty | naming the target in the row text |
+| `{query}` | the text after the prefix | showing what was typed |
+| `{prefix}` | the trigger string (e.g. `ob:`) | rare; mostly for debugging-style rows |
+
+⚠️ **Security:** `cmd` prefixes run arbitrary commands with your user privileges. `{query}` and `{urlquery}` are always quoted so the input can't inject shell syntax, but `{raw}` is not — only add prefixes you trust, and prefer `{query}`.
+
+When building a URI, reach for `{urlquery}` rather than writing your own quotes around `{raw}`. A template like `xdg-open "app://s?q={raw}"` looks safe but isn't: an input containing a double quote closes the one in the template and the rest is parsed as shell code. `{urlquery}` carries its own quoting, so there is nothing to close.
 
 ### Icons
 
@@ -189,7 +205,7 @@ Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape
 - BMP codepoints work directly: `"\uf1a0"` (Google).
 - Codepoints above `0xFFFF` need a **surrogate pair**: `"\udb81\udc14"` for `󰈔` (U+F0214).
 
-`label` is shown in the row text (`Search Google for "..."`, `Run Terminal`); the icon sits at the left of the row.
+`label` is shown in the row text (`Search Google for "..."`, `Run Terminal`); override the full row with `rowLabel` (see above). The icon sits at the left of the row.
 
 ```jsonc
 {
@@ -215,10 +231,23 @@ Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape
 ## Behavior notes
 
 - **File search** queries `locate` with the pattern wrapped as `*query*`, so `file:report*pdf` matches names containing both "report" and "pdf". An exact existing path (absolute, or relative to `$HOME`) is always shown first even if the `plocate` index hasn't caught up. Results open through the bundled `scripts/smart-open.sh`, which bypasses `xdg-desktop-portal` (which can hang for detached processes) and wraps terminal apps in `xdg-terminal-exec` so TUI editors get a real TTY.
-- **Calculator** supports `+ - * / % ^` plus `sqrt`, `cbrt`, `abs`, `pow`, `hypot`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log`, `log2`, `log10`, `exp`, `floor`, `ceil`, `round`, `trunc`, `sign`, `min`, `max`, `pi`, `e`. It is deliberately an arithmetic evaluator, not an eval sink: unknown identifiers are rejected before evaluation.
-- **Currency** understands 3-letter ISO codes and the symbols `$ £ € ¥ ₹ ₩` in any position, e.g. `!420 usd to dkk`, `!$420 to dkk`, `!420 EUR to £`. Both source and target currencies are required.
+- **Calculator** supports `+ - * / % ^` (`**` also works) plus `sqrt`, `cbrt`, `abs`, `pow`, `hypot`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log`, `log2`, `log10`, `exp`, `floor`, `ceil`, `round`, `trunc`, `sign`, `min`, `max`, `pi`, `e`, and scientific notation (`1e3`). `^` is right-associative and binds looser than unary minus, so `-2^2` is `-4` and `2^3^2` is `512`, the way both read on paper. It is a tokenizer and a parser that computes as it parses — not `eval` behind a filter — so an expression has no reachable path to anything but the arithmetic above.
+- **Currency** understands 3-letter ISO codes and the symbols `$ £ € ¥ ₹ ₩` in any position, e.g. `!420 usd to dkk`, `!$420 to dkk`, `!420 EUR to £`. Both source and target currencies are required. The request is pinned to HTTPS (redirects included), times out, and has its response size capped; a rate already on hand is reused instead of refetched.
 - **Web prefixes** open in your default browser via `omarchy launch browser` — the same launcher Omarchy's menu uses, so private-window and focus-stealing behavior match.
 - Calculator and currency results copy to your clipboard on Enter; web/cmd rows run on Enter; file rows open on Enter.
+- Every prefix row except `cmd` is launched as an **argv**, not as a shell command line: the path, URL, or result it carries is handed to the program as a single argument, so nothing that came off the filesystem or the network is ever re-parsed as shell syntax. `cmd` is the deliberate exception — a shell command line is exactly what you configured there.
+
+## Security design
+
+The prefix modes take input from three places the user does not control — the filesystem (`locate` results and the `.desktop` files describing how to open them), the network (exchange rates), and whatever gets typed into the filter. The rules the code follows:
+
+- **Untrusted values travel as argv, never as shell text.** File, web, calculator, and currency rows are launched with an argument vector. The two that still need a shell need it only for a login `PATH` or a pipe, and even then the value arrives as a positional parameter (`"$1"`) rather than being spliced into the script — so no quoting helper sits in the trust path. Same for the `locate` query and the rate URL.
+- **`.desktop` files are parsed by the desktop-entry implementation, not by text filters.** `scripts/smart-open.sh` asks GIO for the content type and the registered default application, then either hands the entry to `gio launch` or expands its `Exec=` into an argv under the desktop-entry field-code and quoting rules and `execve`s that. A crafted `Exec=` containing `;`, `|`, `&&`, `$(…)`, or backticks yields inert argv elements, because no shell ever sees it.
+- **Every producer has a byte ceiling.** The currency fetch, the file search, and the provider enumerations all end in `head -c`, so a flooding response or script cannot grow a collector without bound. The network fetch is bounded twice (`--max-filesize` for a declared length, `head -c` for a chunked one) and pinned to HTTPS for both the request and any redirect.
+- **The calculator is a parser, not a filtered `eval`.** It never builds a string for `Function()`; input length and nesting depth are capped, function arity is checked, and the name allowlist is consulted with own-property lookups so inherited names like `constructor` and `__proto__` cannot reach it.
+- **The one deliberate exception is `cmd`.** A `cmd` prefix runs the shell command line you configured, and `{raw}` interpolates your input into it unquoted. That is the feature; prefer `{query}` or `{urlquery}`, which are always quoted.
+
+If you find something here that doesn't hold, please open an issue.
 
 ## Troubleshooting
 
