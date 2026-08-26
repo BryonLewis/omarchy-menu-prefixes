@@ -327,6 +327,12 @@ Item {
   // regardless of where the plugin is installed (clone vs. `plugin add`).
   readonly property string smartOpenScript: String(Qt.resolvedUrl("scripts/smart-open.sh")).replace(/^file:\/\//, "")
 
+  // Producer-side ceilings for async process stdout (currency HTTP body and
+  // provider enumerations). Keeps StdioCollector / SplitParser from growing
+  // without bound if a response or script floods the pipe.
+  readonly property int currencyMaxBytes: 65536
+  readonly property int providerMaxBytes: 1048576
+
   // ------------------------------------------------------------- rows
 
   function prefixActionRow(itemId, icon, label, detail, action) {
@@ -486,7 +492,9 @@ Item {
     root.currencyPendingQuery = null
     var url = "https://api.frankfurter.app/latest?amount=" + encodeURIComponent(parsed.amount) + "&from=" + parsed.from + "&to=" + parsed.to
     currencyProc.parsedQuery = parsed
-    currencyProc.command = ["bash", "-lc", "curl -sL --max-time 5 " + Util.shellQuote(url)]
+    currencyProc.command = ["bash", "-lc",
+      "curl -sL --max-time 5 --max-filesize " + root.currencyMaxBytes
+      + " " + Util.shellQuote(url) + " | head -c " + root.currencyMaxBytes]
     currencyProc.running = true
   }
 
@@ -563,7 +571,10 @@ Item {
     providerProc.providerKey = entry.provider
     providerProc.revision = root.providerRevision
     providerProc.collected = ""
-    providerProc.command = ["bash", "-lc", spec.script]
+    // Cap stdout at the producer so a runaway enumeration cannot fill memory
+    // via SplitParser before mergeProviderRows runs.
+    providerProc.command = ["bash", "-lc",
+      "{ " + spec.script + "; } | head -c " + root.providerMaxBytes]
     providerProc.running = true
   }
 
