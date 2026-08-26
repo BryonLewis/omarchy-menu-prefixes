@@ -335,13 +335,13 @@ Item {
 
   // ------------------------------------------------------------- rows
 
-  function prefixActionRow(itemId, icon, label, detail, action) {
+  function prefixActionRow(itemId, entry, label, detail, action) {
     return {
       itemId: itemId,
       kind: "action",
-      icon: icon,
+      icon: String(entry.fontIcon || ""),
       iconFont: "",
-      appIcon: "",
+      appIcon: String(entry.appIcon || ""),
       appId: "",
       label: label,
       target: "",
@@ -368,7 +368,7 @@ Item {
       var url = PrefixModel.expandUrl(match.entry.url, match.query)
       displayModel.append(root.prefixActionRow(
         "prefix.web",
-        match.entry.icon,
+        match.entry,
         "Search " + (match.entry.label || match.prefix) + ' for "' + match.query + '"',
         url,
         "omarchy launch browser " + Util.shellQuote(url)
@@ -377,7 +377,7 @@ Item {
       var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
       displayModel.append(root.prefixActionRow(
         "prefix.cmd",
-        match.entry.icon,
+        match.entry,
         match.entry.label ? "Run " + match.entry.label : "Run command",
         command,
         command
@@ -388,7 +388,7 @@ Item {
         var resultText = String(calcResult)
         displayModel.append(root.prefixActionRow(
           "prefix.calc",
-          match.entry.icon,
+          match.entry,
           resultText,
           match.prefix + match.query,
           "printf '%s' " + Util.shellQuote(resultText) + " | wl-copy"
@@ -404,7 +404,7 @@ Item {
         var convertedText = cached.converted.toFixed(2) + " " + cached.to
         displayModel.append(root.prefixActionRow(
           "prefix.currency",
-          match.entry.icon,
+          match.entry,
           convertedText,
           parsed.amount + " " + parsed.from + " → " + parsed.to,
           "printf '%s' " + Util.shellQuote(convertedText) + " | wl-copy"
@@ -441,7 +441,8 @@ Item {
     if (pattern.charAt(0) !== "*") pattern = "*" + pattern
     if (pattern.charAt(pattern.length - 1) !== "*") pattern = pattern + "*"
     fileSearchProc.collected = ""
-    fileSearchProc.icon = match.entry.icon
+    fileSearchProc.fontIcon = match.entry.fontIcon || ""
+    fileSearchProc.appIcon = match.entry.appIcon || ""
     var quotedQuery = Util.shellQuote(match.query)
     fileSearchProc.command = ["bash", "-lc",
       "q=" + quotedQuery + "; if [[ -e $q ]]; then printf '%s\\n' \"$q\"; fi; "
@@ -463,9 +464,9 @@ Item {
       rows.push({
         itemId: "filesearch." + rows.length,
         kind: "action",
-        icon: fileSearchProc.icon,
+        icon: fileSearchProc.fontIcon,
         iconFont: "",
-        appIcon: "",
+        appIcon: fileSearchProc.appIcon,
         appId: "",
         label: base,
         target: "",
@@ -1157,7 +1158,8 @@ Item {
   Process {
     id: fileSearchProc
     property string collected: ""
-    property string icon: ""
+    property string fontIcon: ""
+    property string appIcon: ""
     stdout: SplitParser {
       onRead: function(data) { fileSearchProc.collected += data + "\n" }
     }
@@ -1510,7 +1512,8 @@ Item {
 
               readonly property bool hasCursor: root.cursorActive && row.index === root.selectedIndex
               readonly property bool isApp: row.kind === "app"
-              readonly property bool hasIcon: row.icon.length > 0 || row.isApp
+              readonly property bool hasAppIcon: row.appIcon.length > 0
+              readonly property bool hasIcon: row.icon.length > 0 || row.hasAppIcon || row.isApp
 
               width: ListView.view.width
               height: root.rowHeightForDetail(row.detail)
@@ -1531,7 +1534,8 @@ Item {
 
               Text {
                 id: iconText
-                visible: row.hasIcon && !row.isApp
+                // Prefer theme/app icons when both fontIcon and appIcon are set.
+                visible: row.icon.length > 0 && !row.hasAppIcon && !row.isApp
                 text: row.icon
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
@@ -1546,7 +1550,7 @@ Item {
 
               Image {
                 id: appIconImage
-                visible: row.isApp
+                visible: row.hasAppIcon || row.isApp
                 width: Style.font.iconLarge
                 height: Style.font.iconLarge
                 fillMode: Image.PreserveAspectFit
@@ -1554,7 +1558,7 @@ Item {
                 // PNG icons upscaled and blurry on HiDPI displays.
                 sourceSize.width: width * Screen.devicePixelRatio
                 sourceSize.height: height * Screen.devicePixelRatio
-                source: row.isApp && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
+                source: (row.hasAppIcon || row.isApp) && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
                 asynchronous: true
                 anchors.left: parent.left
                 anchors.leftMargin: root.rowReservedBorderLeft + Style.space(8) + (Style.space(36) - width) / 2

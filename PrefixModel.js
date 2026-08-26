@@ -32,15 +32,27 @@ function clampInt(value, min, max, fallback) {
 // config section; the rest live in the `prefixes` map.
 var VALID_KINDS = ["file", "web", "cmd", "calc", "currency"]
 
+// Resolve a prefix entry's icons. Prefer fontIcon/appIcon; fall back to the
+// legacy `icon` key as fontIcon so older configs keep working.
+function entryIcons(entry) {
+  var src = isPlainObject(entry) ? entry : ({})
+  return {
+    fontIcon: String(src.fontIcon || src.icon || ""),
+    appIcon: String(src.appIcon || "")
+  }
+}
+
 // Baked-in defaults, used verbatim when no user config exists and as the
-// base the user config overlays. Icons are Nerd Font glyphs (BMP codepoints
-// so they can be written as \uXXXX escapes in both JS and JSONC).
+// base the user config overlays. fontIcon values are Nerd Font glyphs (BMP
+// codepoints so they can be written as \uXXXX escapes in both JS and JSONC).
+// appIcon values are Freedesktop theme icon names (same as desktop Icon=).
 function defaultConfig() {
   return {
     file: {
       prefix: "file:",
       label: "Files",
-      icon: "\uf15b",
+      fontIcon: "\uf15b",
+      appIcon: "",
       maxResults: 60,
       caseInsensitive: true
     },
@@ -48,17 +60,19 @@ function defaultConfig() {
       "g:": {
         kind: "web",
         label: "Google",
-        icon: "\uf1a0",
+        fontIcon: "\uf1a0",
+        appIcon: "",
         url: "https://www.google.com/search?q={query}"
       },
       "yt:": {
         kind: "web",
         label: "YouTube",
-        icon: "\uf167",
+        fontIcon: "\uf167",
+        appIcon: "",
         url: "https://www.youtube.com/results?search_query={query}"
       },
-      "=": { kind: "calc", label: "Calculator", icon: "\uf1ec" },
-      "!": { kind: "currency", label: "Currency", icon: "\uf155" }
+      "=": { kind: "calc", label: "Calculator", fontIcon: "\uf1ec", appIcon: "" },
+      "!": { kind: "currency", label: "Currency", fontIcon: "\uf155", appIcon: "" }
     }
   }
 }
@@ -78,7 +92,7 @@ function parseConfig(raw) {
 }
 
 // Per-key merge of one config entry. An overlay key always wins; keys only
-// present in the base survive (so a user can tweak just the icon of `g:`).
+// present in the base survive (so a user can tweak just the fontIcon of `g:`).
 function mergeEntry(base, overlay) {
   var out = ({})
   if (isPlainObject(base)) {
@@ -86,6 +100,10 @@ function mergeEntry(base, overlay) {
   }
   if (isPlainObject(overlay)) {
     for (var k2 in overlay) out[k2] = overlay[k2]
+  }
+  // Legacy `icon` → fontIcon when the overlay only set the old key.
+  if (isPlainObject(overlay) && overlay.icon != null && overlay.fontIcon == null) {
+    out.fontIcon = overlay.icon
   }
   return out
 }
@@ -133,11 +151,13 @@ function normalizeTable(config) {
   var filePrefix = String(fileCfg.prefix || "")
   if (filePrefix) {
     seen[filePrefix] = true
+    var fileIcons = entryIcons(fileCfg)
     table.push({
       prefix: filePrefix,
       kind: "file",
       label: String(fileCfg.label || "Files"),
-      icon: String(fileCfg.icon || ""),
+      fontIcon: fileIcons.fontIcon,
+      appIcon: fileIcons.appIcon,
       maxResults: clampInt(fileCfg.maxResults, 1, 500, 60),
       caseInsensitive: fileCfg.caseInsensitive !== false
     })
@@ -156,11 +176,13 @@ function normalizeTable(config) {
     if (kind === "cmd" && !String(entry.cmd || "")) continue
 
     seen[prefix] = true
+    var icons = entryIcons(entry)
     table.push({
       prefix: prefix,
       kind: kind,
       label: String(entry.label || ""),
-      icon: String(entry.icon || ""),
+      fontIcon: icons.fontIcon,
+      appIcon: icons.appIcon,
       url: String(entry.url || ""),
       cmd: String(entry.cmd || "")
     })
@@ -294,6 +316,7 @@ if (typeof module !== "undefined" && module.exports) {
     stripJsonc: stripJsonc,
     shellQuote: shellQuote,
     isPlainObject: isPlainObject,
+    entryIcons: entryIcons,
     defaultConfig: defaultConfig,
     parseConfig: parseConfig,
     mergeEntry: mergeEntry,

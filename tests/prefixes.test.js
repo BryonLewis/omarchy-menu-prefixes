@@ -59,11 +59,32 @@ test("file prefix matches file: queries", () => {
 })
 
 test("user config overrides defaults per key", () => {
-  const table = tableFor({ prefixes: { "g:": { icon: "X" } } })
+  const table = tableFor({ prefixes: { "g:": { fontIcon: "X" } } })
   const g = table.find((e) => e.prefix === "g:")
-  assert.equal(g.icon, "X")
+  assert.equal(g.fontIcon, "X")
   assert.equal(g.label, "Google") // default survives
   assert.equal(g.url, "https://www.google.com/search?q={query}")
+})
+
+test("legacy icon key maps to fontIcon", () => {
+  const table = tableFor({ prefixes: { "g:": { icon: "legacy" } } })
+  const g = table.find((e) => e.prefix === "g:")
+  assert.equal(g.fontIcon, "legacy")
+})
+
+test("appIcon is normalized alongside fontIcon", () => {
+  const table = tableFor({
+    prefixes: {
+      "g:": { appIcon: "google-chrome", fontIcon: "" },
+      "yt:": { appIcon: "youtube" }
+    }
+  })
+  const g = table.find((e) => e.prefix === "g:")
+  const yt = table.find((e) => e.prefix === "yt:")
+  assert.equal(g.appIcon, "google-chrome")
+  assert.equal(g.fontIcon, "")
+  assert.equal(yt.appIcon, "youtube")
+  assert.equal(yt.fontIcon, "\uf167") // default font glyph kept when only appIcon set
 })
 
 test("null prefix entry removes the default", () => {

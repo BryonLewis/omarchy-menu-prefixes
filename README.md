@@ -64,7 +64,8 @@ The file doesn't need to exist — without it you get the built-in defaults show
   "file": {
     "prefix": "file:",        // trigger string; "" disables file search
     "label": "Files",         // unused by the row (rows show file names)
-    "icon": "\uf15b",         // Nerd Font glyph for result rows
+    "fontIcon": "\uf15b",     // Nerd Font glyph for result rows
+    "appIcon": "",            // or a theme icon name, e.g. "system-file-manager"
     "maxResults": 60,         // cap shown results (1–500)
     "caseInsensitive": true   // false = case-sensitive locate match
   },
@@ -77,34 +78,34 @@ The file doesn't need to exist — without it you get the built-in defaults show
     "g:": {
       "kind": "web",
       "label": "Google",
-      "icon": "\uf1a0",
+      "fontIcon": "\uf1a0",
       "url": "https://www.google.com/search?q={query}"
     },
     "yt:": {
       "kind": "web",
       "label": "YouTube",
-      "icon": "\uf167",
+      "fontIcon": "\uf167",
       "url": "https://www.youtube.com/results?search_query={query}"
     },
 
     // kind "cmd": run a shell command with the input.
     //   {query} = the input, shell-quoted (passed as ONE argument)
     //   {raw}   = the input, substituted verbatim (treated as shell code)
-    // "t:": { "kind": "cmd", "label": "Terminal", "icon": "\uf489",
+    // "t:": { "kind": "cmd", "label": "Terminal", "fontIcon": "\uf489",
     //         "cmd": "kitty -- {query}" },
 
     // kind "calc": inline calculator.
-    "=": { "kind": "calc", "label": "Calculator", "icon": "\uf1ec" },
+    "=": { "kind": "calc", "label": "Calculator", "fontIcon": "\uf1ec" },
 
     // kind "currency": live conversion, e.g. "!420 usd to dkk".
-    "!": { "kind": "currency", "label": "Currency", "icon": "\uf155" }
+    "!": { "kind": "currency", "label": "Currency", "fontIcon": "\uf155" }
   }
 }
 ```
 
 Notes on the schema:
 
-- Entries merge **per key** over the defaults: `{"prefixes": {"g:": {"icon": "X"}}}` changes only Google's icon, keeping its label and URL.
+- Entries merge **per key** over the defaults: `{"prefixes": {"g:": {"fontIcon": "X"}}}` changes only Google's icon, keeping its label and URL.
 - When two prefixes could match, the **longest wins** (`gh:` beats `g:` for `gh:omarchy`).
 - A prefix needs at least one character after it; `g:` alone falls through to normal menu search.
 - Prefixes may be any string: `g:`, `yt:`, `gh:`, `=`, `!`, `ddg:`, `~`, `??` — whatever you like.
@@ -116,13 +117,13 @@ Any site with a search URL works. Find the URL pattern by searching the site onc
 ```jsonc
 {
   "prefixes": {
-    "gh:":  { "kind": "web", "label": "GitHub",    "icon": "\uf09b",
+    "gh:":  { "kind": "web", "label": "GitHub",    "fontIcon": "\uf09b",
               "url": "https://github.com/search?q={query}" },
-    "w:":   { "kind": "web", "label": "Wikipedia", "icon": "\uf266",
+    "w:":   { "kind": "web", "label": "Wikipedia", "fontIcon": "\uf266",
               "url": "https://en.wikipedia.org/w/index.php?search={query}" },
-    "ddg:": { "kind": "web", "label": "DuckDuckGo", "icon": "\uf193",
+    "ddg:": { "kind": "web", "label": "DuckDuckGo", "fontIcon": "\uf193",
               "url": "https://duckduckgo.com/?q={query}" },
-    "m:":   { "kind": "web", "label": "Maps", "icon": "\uf041",
+    "m:":   { "kind": "web", "label": "Maps", "fontIcon": "\uf041",
               "url": "https://www.google.com/maps/search/{query}" }
   }
 }
@@ -139,20 +140,25 @@ Typing `w:hyprland` shows a single row — `Search Wikipedia for "hyprland"` —
   "prefixes": {
     // Pass the input as a single argument (safe default):
     //   t:nvim ~/.bashrc  ->  foot --hold nvim '~/.bashrc'
-    "t:":  { "kind": "cmd", "label": "Terminal", "icon": "\uf489",
+    "t:":  { "kind": "cmd", "label": "Terminal", "fontIcon": "\uf489",
              "cmd": "foot --hold {query}" },
 
     // Copy the input to the clipboard:
-    "cl:": { "kind": "cmd", "label": "Copy", "icon": "\uf0ea",
+    "cl:": { "kind": "cmd", "label": "Copy", "fontIcon": "\uf0ea",
              "cmd": "wl-copy {query}" },
 
     // Download a video:
-    "dl:": { "kind": "cmd", "label": "Download", "icon": "\uf019",
+    "dl:": { "kind": "cmd", "label": "Download", "fontIcon": "\uf019",
              "cmd": "xdg-terminal-exec yt-dlp {query}" },
+
+    // Search an Obsidian vault (ob:weather → opens Obsidian's search UI).
+    // {raw} sits inside the URI; change vault=Personal to your vault name.
+    "ob:": { "kind": "cmd", "label": "Obsidian", "appIcon": "obsidian",
+             "cmd": "xdg-open \"obsidian://search?vault=Personal&query={raw}\"" },
 
     // Treat the input itself as shell code ({raw} — no quoting):
     //   run:fastfetch  ->  runs fastfetch
-    "run:": { "kind": "cmd", "label": "Run", "icon": "\uf054",
+    "run:": { "kind": "cmd", "label": "Run", "fontIcon": "\uf054",
               "cmd": "{raw}" }
   }
 }
@@ -169,12 +175,42 @@ Placeholder semantics:
 
 ### Icons
 
-Icons are [Nerd Font](https://www.nerdfonts.com/cheat-sheet) glyphs, written either as the literal character (`""`) or as a `\uXXXX` JSON escape:
+Each prefix can use either a **font glyph** or a **system/theme icon**:
+
+| Field | Value | Example |
+|-------|-------|---------|
+| `fontIcon` | [Nerd Font](https://www.nerdfonts.com/cheat-sheet) glyph | `"\uf1a0"` (Google) |
+| `appIcon` | Freedesktop theme icon name (same as a `.desktop` file's `Icon=`) | `"google-chrome"`, `"firefox"`, `"system-file-manager"` |
+
+If both are set, `appIcon` wins. The legacy `"icon"` key is still accepted as an alias for `fontIcon`.
+
+Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape:
 
 - BMP codepoints work directly: `"\uf1a0"` (Google).
 - Codepoints above `0xFFFF` need a **surrogate pair**: `"\udb81\udc14"` for `󰈔` (U+F0214).
 
-`label` is shown in the row text (`Search Google for "..."`, `Run Terminal`); `icon` is the glyph at the left of the row.
+`label` is shown in the row text (`Search Google for "..."`, `Run Terminal`); the icon sits at the left of the row.
+
+```jsonc
+{
+  "prefixes": {
+    // Theme icon (looks like a real app icon):
+    "g:": {
+      "kind": "web",
+      "label": "Google",
+      "appIcon": "google-chrome",
+      "url": "https://www.google.com/search?q={query}"
+    },
+    // Font glyph (default style):
+    "yt:": {
+      "kind": "web",
+      "label": "YouTube",
+      "fontIcon": "\uf167",
+      "url": "https://www.youtube.com/results?search_query={query}"
+    }
+  }
+}
+```
 
 ## Behavior notes
 
