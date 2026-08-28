@@ -1532,6 +1532,7 @@ Item {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             text: root.filterText || (root.dmenuActive ? (root.dmenuPrompt + "…") : ((root.item(root.activeMenu) ? (root.item(root.activeMenu).title || root.item(root.activeMenu).label) : "Go") + "…"))
+            textFormat: Text.PlainText
             color: root.foreground
             opacity: root.filterText ? 1 : 0.58
             font.family: root.fontFamily
@@ -1616,6 +1617,7 @@ Item {
                 // Prefer theme/app icons when both fontIcon and appIcon are set.
                 visible: row.icon.length > 0 && !row.hasAppIcon && !row.isApp
                 text: row.icon
+                textFormat: Text.PlainText
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
                 font.pixelSize: Style.font.iconLarge
@@ -1657,6 +1659,7 @@ Item {
                   id: labelText
                   width: parent.width
                   text: row.label
+                  textFormat: Text.PlainText
                   color: row.hasCursor ? root.selectedText : root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.heading
@@ -1667,6 +1670,7 @@ Item {
                 Text {
                   width: parent.width
                   text: row.detail
+                  textFormat: Text.PlainText
                   visible: (root.filterText || row.kind === "dmenu") && row.detail.length > 0
                   color: root.foreground
                   opacity: 0.52
@@ -1779,6 +1783,7 @@ Item {
 
             Text {
               text: root.filterText ? "No matches for “" + root.filterText + "”" : "Nothing here yet"
+              textFormat: Text.PlainText
               color: root.foreground
               opacity: 0.7
               font.family: root.fontFamily
