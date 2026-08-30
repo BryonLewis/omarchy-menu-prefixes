@@ -1,0 +1,12 @@
+{
+  "repository": "basecamp/omarchy",
+  "branch": "quattro",
+  "path": "shell/plugins/menu",
+  "files": [
+    "Menu.qml",
+    "MenuModel.js",
+    "BarWidget.qml"
+  ],
+  "commit": "3d033d1b00a2070d7553ed48fef587e5cfc3529c",
+  "commitTitle": "Stop the menu from opening on the previous evaluation's answers (#6601)"
+}
