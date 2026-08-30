@@ -1,0 +1,98 @@
+name: Upstream menu rebase
+
+on:
+  schedule:
+    # Weekly on Monday at 12:00 UTC.
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-rebase-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  rebase:
+    name: Rebase on upstream omarchy.menu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebase forked menu files
+        id: rebase
+        run: |
+          set +e
+          output="$(./scripts/rebase-on-upstream-menu.sh 2>&1)"
+          status=$?
+          echo "$output"
+          set -e
+
+          result="$(echo "$output" | sed -n 's/^rebase-result: //p' | tail -1)"
+          changed_files="$(echo "$output" | sed -n 's/^rebase-changed-files: //p' | tail -1)"
+
+          if [[ "$result" == "unchanged" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "conflicts=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$result" == "rebased" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "conflicts=false" >> "$GITHUB_OUTPUT"
+            echo "changed_files=$changed_files" >> "$GITHUB_OUTPUT"
+          elif [[ "$result" == "conflicts" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "conflicts=true" >> "$GITHUB_OUTPUT"
+            echo "changed_files=$changed_files" >> "$GITHUB_OUTPUT"
+          else
+            exit $status
+          fi
+
+          if [[ "$result" == "rebased" || "$result" == "conflicts" ]]; then
+            commit="$(python3 -c 'import json; print(json.load(open(".upstream-menu.json"))["commit"])')"
+            title="$(python3 -c 'import json; print(json.load(open(".upstream-menu.json"))["commitTitle"])')"
+            echo "upstream_commit=$commit" >> "$GITHUB_OUTPUT"
+            echo "upstream_title=$title" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.rebase.outputs.changed == 'true' && steps.rebase.outputs.conflicts != 'true'
+        run: node --test tests/*.js
+
+      - name: Create pull request
+        if: steps.rebase.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: upstream-menu-rebase
+          delete-branch: true
+          commit-message: "Rebase on upstream omarchy.menu"
+          title: "Rebase on upstream omarchy.menu"
+          body: |
+            Automated rebase of forked menu files onto the latest upstream `omarchy.menu` source from [basecamp/omarchy](https://github.com/basecamp/omarchy) (`quattro` branch).
+
+            - `MenuModel.js` and `BarWidget.qml` are taken verbatim from upstream.
+            - `Menu.qml` is three-way merged; prefix dispatch code should be preserved automatically.
+            - `.upstream-menu.json` is updated to the new pinned upstream commit.
+
+            **Changed upstream files:** ${{ steps.rebase.outputs.changed_files }}
+
+            **Upstream commit:** [`${{ steps.rebase.outputs.upstream_commit }}`](https://github.com/basecamp/omarchy/commit/${{ steps.rebase.outputs.upstream_commit }}) — ${{ steps.rebase.outputs.upstream_title }}
+
+            ${{ steps.rebase.outputs.conflicts == 'true' && '⚠️ **Menu.qml has merge conflicts.** Search for conflict markers and resolve before merging.' || 'No merge conflicts detected in Menu.qml.' }}
+
+            ## Test plan
+            - [ ] Resolve any `Menu.qml` conflict markers
+            - [ ] `node --test tests/*.js`
+            - [ ] `omarchy plugin validate .`
+            - [ ] Smoke-test prefix modes (`file:`, `g:`, `=`, `!`) in the live menu
+          labels: upstream
+
+      - name: Note when upstream is current
+        if: steps.rebase.outputs.changed != 'true'
+        run: echo "Upstream omarchy.menu is already current — no PR opened."
