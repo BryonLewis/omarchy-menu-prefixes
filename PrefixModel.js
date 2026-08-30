@@ -60,15 +60,15 @@ function defaultConfig() {
       "g:": {
         kind: "web",
         label: "Google",
-        fontIcon: "\uf1a0",
-        appIcon: "",
+        fontIcon: "",
+        appIcon: "google-chrome",
         url: "https://www.google.com/search?q={query}"
       },
       "yt:": {
         kind: "web",
         label: "YouTube",
-        fontIcon: "\uf167",
-        appIcon: "",
+        fontIcon: "",
+        appIcon: "youtube",
         url: "https://www.youtube.com/results?search_query={query}"
       },
       "=": { kind: "calc", label: "Calculator", fontIcon: "\uf1ec", appIcon: "" },

@@ -19,6 +19,16 @@ test("defaults include file:, g:, yt:, =, !", () => {
   assert.ok(prefixes.includes("!"))
 })
 
+test("defaults use theme icons for g: and yt:", () => {
+  const table = tableFor(null)
+  const g = table.find((e) => e.prefix === "g:")
+  const yt = table.find((e) => e.prefix === "yt:")
+  assert.equal(g.appIcon, "google-chrome")
+  assert.equal(g.fontIcon, "")
+  assert.equal(yt.appIcon, "youtube")
+  assert.equal(yt.fontIcon, "")
+})
+
 test("table is sorted longest prefix first", () => {
   const table = PrefixModel.normalizeTable({
     prefixes: { "g:": { kind: "web", url: "https://x/?q={query}" }, "gh:": { kind: "web", url: "https://y/?q={query}" } }
@@ -84,7 +94,7 @@ test("appIcon is normalized alongside fontIcon", () => {
   assert.equal(g.appIcon, "google-chrome")
   assert.equal(g.fontIcon, "")
   assert.equal(yt.appIcon, "youtube")
-  assert.equal(yt.fontIcon, "\uf167") // default font glyph kept when only appIcon set
+  assert.equal(yt.fontIcon, "")
 })
 
 test("null prefix entry removes the default", () => {
