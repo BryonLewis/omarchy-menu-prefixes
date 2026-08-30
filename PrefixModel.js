@@ -608,6 +608,8 @@ function parseCurrencyRateResponse(raw, parsed) {
     var rate = typeof data.rate === "number" ? data.rate : undefined
     if (typeof rate !== "number" || !isFinite(rate)) return null
     if (!parsed || typeof parsed.amount !== "number" || !isFinite(parsed.amount)) return null
+    if (String(data.base || "").toUpperCase() !== parsed.from) return null
+    if (String(data.quote || "").toUpperCase() !== parsed.to) return null
     return {
       amount: parsed.amount,
       from: parsed.from,
