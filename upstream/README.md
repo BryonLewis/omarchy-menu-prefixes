@@ -1,14 +1,24 @@
-# Upstream menu snapshot
+# Upstream tracking
 
-This directory holds pristine copies of the stock `omarchy.menu` plugin files from [basecamp/omarchy](https://github.com/basecamp/omarchy) at the commit recorded in [`.upstream-menu.json`](../.upstream-menu.json).
+This fork rebases onto the stock `omarchy.menu` plugin from [basecamp/omarchy](https://github.com/basecamp/omarchy). No local copies of upstream files are kept — the last-synced commit is recorded in [`.upstream-menu.json`](../.upstream-menu.json).
 
-They are the **base** side of the three-way merge used when rebasing this fork onto upstream changes. The workflow is:
+That commit is the **base** for three-way merging `Menu.qml` when upstream moves:
 
-1. Compare tracked upstream files (`Menu.qml`, `MenuModel.js`, `BarWidget.qml`) against the copies here.
-2. If any differ, run `scripts/rebase-on-upstream-menu.sh` to merge upstream into the fork.
-3. Replace these snapshots with the new upstream versions after a successful rebase.
+| Role | Source |
+|------|--------|
+| Base | Tracked files at the pinned commit in `.upstream-menu.json` |
+| Ours | This repo's `Menu.qml` (with prefix dispatch) |
+| Theirs | Tracked files at upstream `quattro` branch head |
 
-Do not edit files in `upstream/menu/` by hand — they should always reflect the last upstream commit this fork was rebased onto. To rebase locally:
+`MenuModel.js` and `BarWidget.qml` are copied verbatim from upstream; only `Menu.qml` is merged.
+
+## How it works
+
+1. Compare tracked files (`Menu.qml`, `MenuModel.js`, `BarWidget.qml`) at the pinned commit vs. upstream branch head.
+2. If any differ, `scripts/rebase-on-upstream-menu.sh` fetches both versions and rebases.
+3. Update the pinned commit in `.upstream-menu.json` after a successful rebase.
+
+To rebase locally:
 
 ```bash
 ./scripts/rebase-on-upstream-menu.sh

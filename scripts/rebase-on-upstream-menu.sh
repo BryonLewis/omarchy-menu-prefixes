@@ -5,9 +5,10 @@
 # change upstream — commits that touch other files under shell/plugins/menu/
 # (e.g. manifest.json) are ignored.
 #
+# The last-synced upstream commit in .upstream-menu.json is the merge base.
 # MenuModel.js and BarWidget.qml are taken verbatim from upstream. Menu.qml is
-# three-way merged: upstream/menu/Menu.qml (base), Menu.qml (ours), latest
-# upstream Menu.qml (theirs). Conflicts are left in place for manual resolution.
+# three-way merged: base (pinned commit), Menu.qml (ours), latest upstream
+# Menu.qml (theirs). Conflicts are left in place for manual resolution.
 #
 # Usage:
 #   scripts/rebase-on-upstream-menu.sh          # rebase if tracked files moved
@@ -16,7 +17,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="$ROOT/.upstream-menu.json"
-UPSTREAM_DIR="$ROOT/upstream/menu"
 
 check_only=false
 if [[ "${1:-}" == "--check" ]]; then
@@ -54,16 +54,15 @@ stored_commit="${cfg[3]}"
 tracked_files=("${cfg[@]:4}")
 
 upstream_state() {
-  python3 - "$repo" "$branch" "$menu_path" "$UPSTREAM_DIR" "${tracked_files[@]}" <<'PY'
+  python3 - "$repo" "$branch" "$menu_path" "$stored_commit" "${tracked_files[@]}" <<'PY'
 import hashlib
 import json
 import sys
-import urllib.error
 import urllib.request
 
-repo, branch, menu_path, upstream_dir, *tracked_files = sys.argv[1:]
+repo, branch, menu_path, stored_commit, *tracked_files = sys.argv[1:]
 
-def fetch_text(url):
+def fetch_bytes(url):
     req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read()
@@ -77,26 +76,18 @@ def fetch_branch_head():
 
 def file_at_ref(ref, filename):
     url = f"https://raw.githubusercontent.com/{repo}/{ref}/{menu_path}/{filename}"
-    return fetch_text(url)
+    return fetch_bytes(url)
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 head_sha, head_title = fetch_branch_head()
 changed = []
-latest_by_file = {}
 
 for filename in tracked_files:
-    local_path = f"{upstream_dir}/{filename}"
-    try:
-        with open(local_path, "rb") as f:
-            local = f.read()
-    except FileNotFoundError:
-        raise SystemExit(f"error: missing base file {local_path}")
-
-    remote = file_at_ref(head_sha, filename)
-    latest_by_file[filename] = sha256(remote)
-    if sha256(local) != latest_by_file[filename]:
+    base = file_at_ref(stored_commit, filename)
+    head = file_at_ref(head_sha, filename)
+    if sha256(base) != sha256(head):
         changed.append(filename)
 
 if not changed:
@@ -137,7 +128,7 @@ PY
 fi
 
 echo "tracked upstream files changed: ${changed_files}"
-echo "  branch head ${head_commit:0:12}: ${head_title}"
+echo "  base ${stored_commit:0:12} -> head ${head_commit:0:12}: ${head_title}"
 echo "rebase-changed-files: ${changed_files}"
 
 if $check_only; then
@@ -148,24 +139,21 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 fetch_upstream_file() {
-  local name="$1"
+  local ref="$1"
+  local name="$2"
   curl -fsSL \
-    "https://raw.githubusercontent.com/${repo}/${head_commit}/${menu_path}/${name}" \
-    -o "$tmpdir/${name}"
+    "https://raw.githubusercontent.com/${repo}/${ref}/${menu_path}/${name}" \
+    -o "$tmpdir/${ref}-${name}"
 }
 
 for file in "${tracked_files[@]}"; do
-  fetch_upstream_file "$file"
+  fetch_upstream_file "$stored_commit" "$file"
+  fetch_upstream_file "$head_commit" "$file"
 done
 
-if [[ ! -f "$UPSTREAM_DIR/Menu.qml" ]]; then
-  echo "error: missing base file $UPSTREAM_DIR/Menu.qml" >&2
-  exit 1
-fi
-
 cp "$ROOT/Menu.qml" "$tmpdir/Menu.ours.qml"
-cp "$UPSTREAM_DIR/Menu.qml" "$tmpdir/Menu.base.qml"
-cp "$tmpdir/Menu.qml" "$tmpdir/Menu.theirs.qml"
+cp "$tmpdir/${stored_commit}-Menu.qml" "$tmpdir/Menu.base.qml"
+cp "$tmpdir/${head_commit}-Menu.qml" "$tmpdir/Menu.theirs.qml"
 
 set +e
 git merge-file -p \
@@ -177,13 +165,8 @@ merge_status=$?
 set -e
 
 cp "$tmpdir/Menu.merged.qml" "$ROOT/Menu.qml"
-cp "$tmpdir/MenuModel.js" "$ROOT/MenuModel.js"
-cp "$tmpdir/BarWidget.qml" "$ROOT/BarWidget.qml"
-
-mkdir -p "$UPSTREAM_DIR"
-cp "$tmpdir/Menu.theirs.qml" "$UPSTREAM_DIR/Menu.qml"
-cp "$tmpdir/MenuModel.js" "$UPSTREAM_DIR/MenuModel.js"
-cp "$tmpdir/BarWidget.qml" "$UPSTREAM_DIR/BarWidget.qml"
+cp "$tmpdir/${head_commit}-MenuModel.js" "$ROOT/MenuModel.js"
+cp "$tmpdir/${head_commit}-BarWidget.qml" "$ROOT/BarWidget.qml"
 
 python3 - "$CONFIG" "$head_commit" "$head_title" <<'PY'
 import json, sys

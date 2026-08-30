@@ -78,7 +78,7 @@ jobs:
 
             - `MenuModel.js` and `BarWidget.qml` are taken verbatim from upstream.
             - `Menu.qml` is three-way merged; prefix dispatch code should be preserved automatically.
-            - Upstream snapshot in `upstream/menu/` and `.upstream-menu.json` are updated to the new base commit.
+            - `.upstream-menu.json` is updated to the new pinned upstream commit.
 
             **Changed upstream files:** ${{ steps.rebase.outputs.changed_files }}
 
