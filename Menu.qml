@@ -524,7 +524,7 @@ Item {
     root.currencyPendingQuery = null
     // `from`/`to` are the ISO codes parseCurrencyQuery validated as exactly
     // three letters, and `amount` is a parsed number.
-    var url = "https://api.frankfurter.app/latest?amount=" + encodeURIComponent(parsed.amount) + "&from=" + parsed.from + "&to=" + parsed.to
+    var url = "https://api.frankfurter.dev/v2/rate/" + encodeURIComponent(parsed.from) + "/" + encodeURIComponent(parsed.to)
     currencyProc.parsedQuery = parsed
     // The URL is a positional parameter, not part of the script text. --proto
     // and --proto-redir pin the whole exchange to https, so neither the
@@ -541,16 +541,7 @@ Item {
   }
 
   function applyCurrencyResult(raw, parsed) {
-    root.currencyResult = null
-    try {
-      var data = JSON.parse(raw)
-      var value = data && data.rates ? data.rates[parsed.to] : undefined
-      if (typeof value === "number" && isFinite(value)) {
-        root.currencyResult = { amount: parsed.amount, from: parsed.from, to: parsed.to, converted: value }
-      }
-    } catch (e) {
-      root.currencyResult = null
-    }
+    root.currencyResult = PrefixModel.parseCurrencyRateResponse(raw, parsed)
     if (root.opened) root.rebuildDisplay()
   }
 

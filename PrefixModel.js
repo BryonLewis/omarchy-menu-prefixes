@@ -599,6 +599,27 @@ function parseCurrencyQuery(text) {
   return { amount: amount, from: fromCode, to: toCode }
 }
 
+// Parses the response from Frankfurter v2 rate endpoint:
+// https://api.frankfurter.dev/v2/rate/{base}/{quote} -> { "date": "...", "base": "...", "quote": "...", "rate": ... }
+function parseCurrencyRateResponse(raw, parsed) {
+  try {
+    var data = typeof raw === "string" ? JSON.parse(raw) : raw
+    if (!data || typeof data !== "object") return null
+    var rate = typeof data.rate === "number" ? data.rate : undefined
+    if (typeof rate !== "number" || !isFinite(rate)) return null
+    if (!parsed || typeof parsed.amount !== "number" || !isFinite(parsed.amount)) return null
+    return {
+      amount: parsed.amount,
+      from: parsed.from,
+      to: parsed.to,
+      converted: parsed.amount * rate,
+      rate: rate
+    }
+  } catch (e) {
+    return null
+  }
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VALID_KINDS: VALID_KINDS,
@@ -623,6 +644,8 @@ if (typeof module !== "undefined" && module.exports) {
     expandCommand: expandCommand,
     evaluateCalc: evaluateCalc,
     normalizeCurrencyText: normalizeCurrencyText,
-    parseCurrencyQuery: parseCurrencyQuery
+    parseCurrencyQuery: parseCurrencyQuery,
+    parseCurrencyRateResponse: parseCurrencyRateResponse
   }
 }
+
