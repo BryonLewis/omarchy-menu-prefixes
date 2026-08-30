@@ -266,6 +266,8 @@ node --test tests/prefixes.test.js   # unit tests for config/prefix/template log
 omarchy plugin validate .            # manifest/schema validation
 ```
 
+See [RELEASE.md](RELEASE.md) for cutting a versioned release and promoting it on the plugin marketplace.
+
 `PrefixModel.js` is pure JS (no QML) so the config parsing, prefix resolution, and template expansion can be tested with plain `node`. `Menu.qml` is the stock Omarchy menu source with the prefix dispatch layered on top — when Omarchy updates its menu, re-fork from `/usr/share/omarchy/shell/plugins/menu/` and reapply the prefix block (search for "Prefix search modes").
 
 ## Credits / license
