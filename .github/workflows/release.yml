@@ -1,0 +1,207 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump from manifest.json
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      notes:
+        description: Release notes (markdown)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Cut release
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out Omarchy validator
+        uses: actions/checkout@v4
+        with:
+          repository: basecamp/omarchy
+          ref: 7be59e1f4b7451d352d4673c560168290792590f
+          path: omarchy
+          sparse-checkout: bin/omarchy-plugin-validate
+          sparse-checkout-cone-mode: false
+
+      - name: Install lint tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Lint JavaScript
+        run: |
+          for f in PrefixModel.js MenuModel.js tests/*.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: Lint QML (brace balance)
+        run: |
+          for f in *.qml; do
+            echo "Checking $f"
+            python3 - "$f" <<'EOF'
+          import sys
+
+          path = sys.argv[1]
+          text = open(path).read()
+          depth = 0
+          for ch in text:
+              if ch == "{":
+                  depth += 1
+              elif ch == "}":
+                  depth -= 1
+                  if depth < 0:
+                      print(f"{path}: unbalanced '}}'")
+                      sys.exit(1)
+          if depth != 0:
+              print(f"{path}: unbalanced braces (off by {depth})")
+              sys.exit(1)
+          EOF
+          done
+
+      - name: Run tests
+        run: node --test tests/*.js
+
+      - name: Validate Omarchy plugin
+        run: ./omarchy/bin/omarchy-plugin-validate .
+
+      - name: Bump manifest version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          node <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+
+          const bump = process.env.BUMP;
+          const manifestPath = "manifest.json";
+          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+          const match = String(manifest.version || "").match(/^(\d+)\.(\d+)\.(\d+)$/);
+          if (!match) {
+            throw new Error(`manifest.json version must be semver X.Y.Z, got ${JSON.stringify(manifest.version)}`);
+          }
+
+          let major = Number(match[1]);
+          let minor = Number(match[2]);
+          let patch = Number(match[3]);
+          if (bump === "major") {
+            major += 1;
+            minor = 0;
+            patch = 0;
+          } else if (bump === "minor") {
+            minor += 1;
+            patch = 0;
+          } else if (bump === "patch") {
+            patch += 1;
+          } else {
+            throw new Error(`Unsupported bump: ${bump}`);
+          }
+
+          const version = `${major}.${minor}.${patch}`;
+          manifest.version = version;
+          writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+          const output = process.env.GITHUB_OUTPUT;
+          writeFileSync(output, `version=${version}\n`, { flag: "a" });
+          console.log(`Bumped manifest.json to ${version}`);
+          NODE
+
+      - name: Ensure release tag is unused
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists locally." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists on origin." >&2
+            exit 1
+          fi
+
+      - name: Commit, tag, and push release
+        id: publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "Release v${VERSION}"
+          git tag "v${VERSION}"
+          git push origin HEAD:master
+          git push origin "v${VERSION}"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes file
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: printf '%s\n' "$NOTES" > release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md
+
+      - name: Write marketplace verification summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.publish.outputs.tag }}
+          COMMIT_SHA: ${{ steps.publish.outputs.commit_sha }}
+          REPO_URL: https://github.com/${{ github.repository }}
+          MARKETPLACE_ISSUE_URL: https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release ${TAG}
+
+          - **Version:** \`${VERSION}\`
+          - **Tag:** \`${TAG}\`
+          - **Commit:** [\`${COMMIT_SHA:0:7}\`](${REPO_URL}/commit/${COMMIT_SHA})
+          - **GitHub Release:** [${TAG}](${REPO_URL}/releases/tag/${TAG})
+
+          ### Marketplace verification (manual)
+
+          To promote this commit as the verified marketplace snapshot, open a
+          [plugin verification issue](${MARKETPLACE_ISSUE_URL}) with:
+
+          - **Verification action:** Verify and publish a newer upstream commit
+          - **Plugin ID:** \`com.bryon.omarchy-menu-prefixes\`
+          - **Repository URL:** \`${REPO_URL}\`
+          - **Target commit:** \`${COMMIT_SHA}\`
+
+          Check the acknowledgment box, submit the issue, and wait for a
+          marketplace maintainer to apply \`approved-and-verified\` after the bot
+          reports pass.
+
+          Omarchy still installs from mutable \`master\` HEAD, not this exact
+          commit. Verification covers the marketplace listing only.
+          EOF
