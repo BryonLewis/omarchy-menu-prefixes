@@ -78,13 +78,13 @@ The file doesn't need to exist — without it you get the built-in defaults show
     "g:": {
       "kind": "web",
       "label": "Google",
-      "fontIcon": "\uf1a0",
+      "appIcon": "google-chrome",
       "url": "https://www.google.com/search?q={query}"
     },
     "yt:": {
       "kind": "web",
       "label": "YouTube",
-      "fontIcon": "\uf167",
+      "appIcon": "youtube",
       "url": "https://www.youtube.com/results?search_query={query}"
     },
 
@@ -195,14 +195,14 @@ Each prefix can use either a **font glyph** or a **system/theme icon**:
 
 | Field | Value | Example |
 |-------|-------|---------|
-| `fontIcon` | [Nerd Font](https://www.nerdfonts.com/cheat-sheet) glyph | `"\uf1a0"` (Google) |
-| `appIcon` | Freedesktop theme icon name (same as a `.desktop` file's `Icon=`) | `"google-chrome"`, `"firefox"`, `"system-file-manager"` |
+| `fontIcon` | [Nerd Font](https://www.nerdfonts.com/cheat-sheet) glyph | `"\uf09b"` (GitHub) |
+| `appIcon` | Freedesktop theme icon name (same as a `.desktop` file's `Icon=`) | `"google-chrome"`, `"youtube"`, `"system-file-manager"` |
 
 If both are set, `appIcon` wins. The legacy `"icon"` key is still accepted as an alias for `fontIcon`.
 
 Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape:
 
-- BMP codepoints work directly: `"\uf1a0"` (Google).
+- BMP codepoints work directly: `"\uf09b"` (GitHub).
 - Codepoints above `0xFFFF` need a **surrogate pair**: `"\udb81\udc14"` for `󰈔` (U+F0214).
 
 `label` is shown in the row text (`Search Google for "..."`, `Run Terminal`); override the full row with `rowLabel` (see above). The icon sits at the left of the row.
@@ -210,18 +210,19 @@ Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape
 ```jsonc
 {
   "prefixes": {
-    // Theme icon (looks like a real app icon):
+    // Theme icon (default for g: and yt:):
     "g:": {
       "kind": "web",
       "label": "Google",
       "appIcon": "google-chrome",
       "url": "https://www.google.com/search?q={query}"
     },
-    // Font glyph (default style):
+    // Font glyph (override when you prefer Nerd Font icons):
     "yt:": {
       "kind": "web",
       "label": "YouTube",
       "fontIcon": "\uf167",
+      "appIcon": "",
       "url": "https://www.youtube.com/results?search_query={query}"
     }
   }
