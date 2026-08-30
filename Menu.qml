@@ -87,6 +87,8 @@ Item {
   property var fileSearchPendingQuery: null
   property var currencyPendingQuery: null
   property var currencyResult: null
+  property var cmdRenderPendingQuery: null
+  property var cmdRenderResult: null
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
@@ -160,6 +162,48 @@ Item {
     return (root.filterText || root.dmenuActive) && detail ? root.detailRowHeight : root.baseRowHeight
   }
 
+  function rowTextWidth() {
+    return Math.max(
+      Style.space(120),
+      root.cardWidth - root.contentMargin * 2 - root.rowReservedBorderLeft
+        - root.rowReservedBorderRight - Style.space(56)
+    )
+  }
+
+  function estimateWrappedLineCount(text, bodyFont) {
+    var value = String(text || "")
+    if (!value) return 0
+    var fontSize = bodyFont ? Style.font.body : Style.font.heading
+    var charsPerLine = Math.max(12, Math.floor(root.rowTextWidth() / Math.max(Style.space(6), fontSize * 0.55)))
+    var paragraphs = value.split(/\r?\n/)
+    var lines = 0
+    for (var i = 0; i < paragraphs.length; i++) {
+      var chunk = paragraphs[i]
+      if (!chunk) { lines += 1; continue }
+      lines += Math.ceil(chunk.length / charsPerLine)
+    }
+    return lines
+  }
+
+  function rowHeightForRow(row) {
+    if (!row) return root.baseRowHeight
+    if (row.multiline) {
+      var titleLines = row.label ? 1 : 0
+      var bodyLines = Math.min(
+        root.estimateWrappedLineCount(row.detail, true),
+        PrefixModel.CMD_RENDER_MAX_DISPLAY_LINES
+      )
+      var titleHeight = titleLines ? Style.font.heading : 0
+      var bodyHeight = bodyLines > 0
+        ? bodyLines * Style.font.body + Math.max(0, bodyLines - 1) * Style.space(2)
+        : 0
+      var spacing = (titleLines > 0 && bodyLines > 0) ? Style.space(3) : 0
+      var padding = Style.spacing.rowPaddingX * 2
+      return Math.max(root.detailRowHeight, titleHeight + spacing + bodyHeight + padding)
+    }
+    return root.rowHeightForDetail(row.detail)
+  }
+
   // Height the card can devote to rows before running off the screen — or
   // past the frozen top edge once a search has pinned the card in place.
   // Uses panel.cardTop rather than effectiveCardTop: the centered top is
@@ -202,7 +246,7 @@ Item {
       var row = displayModel.get(i)
       if (i > 0) total += root.rowSpacing
       if (row.section === "drilldown" && previousSection !== "drilldown") total += root.dividerHeight
-      total += root.rowHeightForDetail(row.detail)
+      total += root.rowHeightForRow(row)
       previousSection = row.section
       totals.push(total)
     }
@@ -221,7 +265,7 @@ Item {
     var total = 0
     for (var i = 0; i < displayModel.count; i++) {
       if (i > 0) total += root.rowSpacing
-      total += root.rowHeightForDetail(displayModel.get(i).detail)
+      total += root.rowHeightForRow(displayModel.get(i))
       totals.push(total)
     }
 
@@ -342,12 +386,13 @@ Item {
   // needs no ceiling: it discards each expression's own output and emits one
   // short fixed-shape line per menu item.
   readonly property int currencyMaxBytes: 65536
+  readonly property int cmdRenderMaxBytes: PrefixModel.CMD_RENDER_MAX_BYTES
   readonly property int fileSearchMaxBytes: 262144
   readonly property int providerMaxBytes: 1048576
 
   // ------------------------------------------------------------- rows
 
-  function prefixActionRow(itemId, kind, entry, label, detail, action) {
+  function prefixActionRow(itemId, kind, entry, label, detail, action, multiline) {
     return {
       itemId: itemId,
       kind: kind,
@@ -363,7 +408,8 @@ Item {
       action: action,
       provider: "",
       score: 0,
-      section: ""
+      section: "",
+      multiline: multiline === true
     }
   }
 
@@ -387,15 +433,48 @@ Item {
         ""
       ))
     } else if (match.kind === "cmd") {
-      var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
-      displayModel.append(root.prefixActionRow(
-        "prefix.cmd",
-        "action",
-        match.entry,
-        root.prefixRowLabel("cmd", match),
-        command,
-        command
-      ))
+      if (match.entry.renderResults) {
+        var cmdResult = root.cmdRenderResultForMatch(match)
+        if (cmdResult) {
+          displayModel.append(root.prefixActionRow(
+            "prefix.cmd.render",
+            "prefix.copy",
+            match.entry,
+            root.prefixRowLabel("cmd", match),
+            cmdResult.formatted.full,
+            cmdResult.formatted.full,
+            true
+          ))
+        } else if (cmdRenderProc.running && root.cmdRenderMatchesFilter(match)) {
+          displayModel.append(root.prefixActionRow(
+            "prefix.cmd.render.loading",
+            "prefix.render.pending",
+            match.entry,
+            "Waiting for response…",
+            root.prefixRowLabel("cmd", match),
+            ""
+          ))
+        } else if (match.entry.renderOnEnter) {
+          displayModel.append(root.prefixActionRow(
+            "prefix.cmd.render.preview",
+            "prefix.render.pending",
+            match.entry,
+            root.prefixRowLabel("cmd", match),
+            'Press Enter to ask "' + match.query + '"',
+            ""
+          ))
+        }
+      } else {
+        var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
+        displayModel.append(root.prefixActionRow(
+          "prefix.cmd",
+          "prefix.cmd.exec",
+          match.entry,
+          root.prefixRowLabel("cmd", match),
+          command,
+          command
+        ))
+      }
     } else if (match.kind === "calc") {
       var calcResult = PrefixModel.evaluateCalc(match.query)
       if (calcResult !== null) {
@@ -542,6 +621,97 @@ Item {
 
   function applyCurrencyResult(raw, parsed) {
     root.currencyResult = PrefixModel.parseCurrencyRateResponse(raw, parsed)
+    if (root.opened) root.rebuildDisplay()
+  }
+
+  // -------------------------------------------------------- cmd render
+
+  function cmdRenderMatchContext() {
+    var ctx = cmdRenderProc.matchContext
+    return ctx && ctx.prefix && ctx.query ? ctx : null
+  }
+
+  function cmdRenderMatchesFilter(match) {
+    var ctx = root.cmdRenderMatchContext()
+    return !!match && !!ctx
+      && ctx.prefix === match.prefix
+      && ctx.query === match.query
+  }
+
+  function cmdRenderResultForMatch(match) {
+    var held = root.cmdRenderResult
+    if (!match || !held || !held.formatted) return null
+    if (held.prefix !== match.prefix || held.query !== match.query) return null
+    return held
+  }
+
+  function handlePrefixEnter() {
+    var match = root.matchPrefix(root.filterText.trim())
+    if (!match || match.kind !== "cmd") return false
+
+    if (match.entry.renderResults) {
+      var result = root.cmdRenderResultForMatch(match)
+      if (result) {
+        root.applyPrefixRow({
+          kind: "prefix.copy",
+          label: result.formatted.label,
+          action: result.formatted.full
+        })
+        return true
+      }
+      if (cmdRenderProc.running && root.cmdRenderMatchesFilter(match)) return true
+      root.startCmdRender(match)
+      root.rebuildDisplay()
+      return true
+    }
+
+    var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
+    if (!command) return true
+    applySerial = requestSerial
+    opened = false
+    filterText = ""
+    root.runAction(command)
+    return true
+  }
+
+  function trySubmitPrefixRender() {
+    return root.handlePrefixEnter()
+  }
+
+  function startCmdRender(match) {
+    var held = root.cmdRenderResult
+    if (held && held.prefix === match.prefix && held.query === match.query) return
+
+    if (cmdRenderProc.running) {
+      root.cmdRenderPendingQuery = match
+      return
+    }
+    root.cmdRenderPendingQuery = null
+    var command = PrefixModel.expandCommand(match.entry.cmd, match.query)
+    cmdRenderProc.matchContext = {
+      prefix: match.prefix,
+      query: match.query
+    }
+    // The expanded command is a positional parameter, not part of the script
+    // text. `timeout` bounds wall time; stderr is discarded; `head -c` caps
+    // stdout the same way currency and file search do.
+    cmdRenderProc.command = ["bash", "-c",
+      'timeout ' + match.entry.renderTimeout + ' bash -lc "$1" 2>/dev/null | head -c ' + root.cmdRenderMaxBytes,
+      "bash", command]
+    cmdRenderProc.running = true
+  }
+
+  function applyCmdRenderResult(raw, context) {
+    var ctx = context || ({})
+    var formatted = PrefixModel.formatCmdRenderOutput(raw)
+    root.cmdRenderResult = {
+      prefix: String(ctx.prefix || ""),
+      query: String(ctx.query || ""),
+      formatted: formatted || {
+        full: "Command returned no output",
+        label: "Command returned no output"
+      }
+    }
     if (root.opened) root.rebuildDisplay()
   }
 
@@ -958,9 +1128,13 @@ Item {
       } else if (filterPrefix.kind === "currency") {
         var parsedForFetch = PrefixModel.parseCurrencyQuery(filterPrefix.query)
         if (parsedForFetch) root.startCurrencyConversion(parsedForFetch)
+      } else if (filterPrefix.kind === "cmd" && filterPrefix.entry.renderResults
+          && !filterPrefix.entry.renderOnEnter) {
+        root.startCmdRender(filterPrefix)
       }
-      // web/cmd build their row synchronously in rebuildDisplay(), and the
-      // calculator is evaluated there too — no process kickoff needed.
+      // web/cmd (without render) build their row synchronously in
+      // rebuildDisplay(), and the calculator is evaluated there too — no
+      // process kickoff needed.
     } else if (!root.dmenuActive && trimmedFilter) {
       root.loadProvidersForSearch()
     }
@@ -1013,10 +1187,17 @@ Item {
     if (index < 0 || index >= displayModel.count) return
 
     var row = displayModel.get(index)
+    if (row.kind === "prefix.render.pending") return
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true, fromPointer)
     } else if (row.kind === "prefix.open" || row.kind === "prefix.web" || row.kind === "prefix.copy") {
       root.applyPrefixRow(row)
+    } else if (row.kind === "prefix.cmd.exec") {
+      if (!row.action) return
+      applySerial = requestSerial
+      opened = false
+      filterText = ""
+      root.runAction(row.action)
     } else if (row.kind === "app") {
       var appId = row.appId
       var label = row.label
@@ -1082,7 +1263,8 @@ Item {
     var kind = String(row.kind)
     // Read the payload before the assignments below, which invalidate the row.
     var payload = kind === "prefix.open" ? String(row.path)
-      : (kind === "prefix.web" ? String(row.detail) : String(row.label))
+      : (kind === "prefix.web" ? String(row.detail)
+      : (kind === "prefix.copy" && row.action ? String(row.action) : String(row.label)))
 
     applySerial = requestSerial
     opened = false
@@ -1254,6 +1436,22 @@ Item {
           var nextQuery = root.currencyPendingQuery
           root.currencyPendingQuery = null
           root.startCurrencyConversion(nextQuery)
+        }
+      }
+    }
+  }
+
+  Process {
+    id: cmdRenderProc
+    property var matchContext: null
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.applyCmdRenderResult(text, cmdRenderProc.matchContext)
+        if (root.cmdRenderPendingQuery !== null) {
+          var nextMatch = root.cmdRenderPendingQuery
+          root.cmdRenderPendingQuery = null
+          root.startCmdRender(nextMatch)
         }
       }
     }
@@ -1475,6 +1673,9 @@ Item {
             if (root.dmenuActive) {
               if (root.mode === "input") root.applyDmenuSelection(root.filterText)
               else if (displayModel.count > 0) root.activateIndex(root.cursorActive ? root.selectedIndex : 0)
+            } else if (root.handlePrefixEnter()) {
+              // Prefix cmd: submit, wait, or copy — never fall through to a
+              // generic row activation that would close the menu early.
             } else if (root.cursorActive) root.activateIndex(root.selectedIndex)
             else if (displayModel.count > 0) root.cursorActive = true
             event.accepted = true
@@ -1580,14 +1781,16 @@ Item {
               required property string path
               required property string action
               required property int childCount
+              property bool multiline: false
 
               readonly property bool hasCursor: root.cursorActive && row.index === root.selectedIndex
               readonly property bool isApp: row.kind === "app"
               readonly property bool hasAppIcon: row.appIcon.length > 0
               readonly property bool hasIcon: row.icon.length > 0 || row.hasAppIcon || row.isApp
+              readonly property bool wrapsDetail: row.multiline === true
 
               width: ListView.view.width
-              height: root.rowHeightForDetail(row.detail)
+              height: root.rowHeightForRow(row)
               radius: root.cornerRadius
               color: row.hasCursor ? root.selectedBackground : "transparent"
               borderSpec: row.hasCursor ? root.selectedBorderSpec : Border.none()
@@ -1643,7 +1846,9 @@ Item {
                 anchors.leftMargin: row.hasIcon ? Style.space(6) : root.rowReservedBorderLeft + Style.space(18)
                 anchors.right: trail.left
                 anchors.rightMargin: Style.space(6)
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.top: row.wrapsDetail ? parent.top : undefined
+                anchors.topMargin: row.wrapsDetail ? Style.spacing.rowPaddingX : 0
+                anchors.verticalCenter: row.wrapsDetail ? undefined : parent.verticalCenter
                 spacing: Style.space(3)
 
                 Text {
@@ -1655,7 +1860,9 @@ Item {
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.heading
                   font.weight: Font.Medium
-                  elide: Text.ElideRight
+                  wrapMode: row.wrapsDetail ? Text.Wrap : Text.NoWrap
+                  elide: row.wrapsDetail ? Text.ElideNone : Text.ElideRight
+                  maximumLineCount: row.wrapsDetail ? 2 : 1
                 }
 
                 Text {
@@ -1663,11 +1870,13 @@ Item {
                   text: row.detail
                   textFormat: Text.PlainText
                   visible: (root.filterText || row.kind === "dmenu") && row.detail.length > 0
-                  color: root.foreground
-                  opacity: 0.52
+                  color: row.hasCursor ? root.selectedText : root.foreground
+                  opacity: row.wrapsDetail ? 0.88 : 0.52
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
+                  font.pixelSize: row.wrapsDetail ? Style.font.body : Style.font.bodySmall
+                  wrapMode: row.wrapsDetail ? Text.Wrap : Text.NoWrap
+                  elide: row.wrapsDetail ? Text.ElideNone : Text.ElideRight
+                  maximumLineCount: row.wrapsDetail ? PrefixModel.CMD_RENDER_MAX_DISPLAY_LINES : 1
                 }
               }
 

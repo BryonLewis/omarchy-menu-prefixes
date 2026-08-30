@@ -213,6 +213,58 @@ test("normalizeTable preserves rowLabel", () => {
   assert.equal(table.find((e) => e.prefix === "ob:").rowLabel, "Find in {label}")
 })
 
+test("normalizeTable preserves cmd renderResults flag", () => {
+  const table = tableFor({
+    prefixes: {
+      "e:": { kind: "cmd", label: "Echo", cmd: "echo {query}", renderResults: true },
+      "l:": { kind: "cmd", label: "Echo", cmd: "echo {query}", render: true },
+      "r:": { kind: "cmd", label: "Run", cmd: "echo {query}" }
+    }
+  })
+  assert.equal(table.find((e) => e.prefix === "e:").renderResults, true)
+  assert.equal(table.find((e) => e.prefix === "l:").renderResults, true)
+  assert.equal(table.find((e) => e.prefix === "r:").renderResults, false)
+})
+
+test("normalizeTable preserves cmd renderTimeout", () => {
+  const table = tableFor({
+    prefixes: {
+      "ha:": { kind: "cmd", label: "HA", cmd: "echo {query}", renderResults: true, renderTimeout: 45 },
+      "e:": { kind: "cmd", label: "Echo", cmd: "echo {query}", renderResults: true }
+    }
+  })
+  assert.equal(table.find((e) => e.prefix === "ha:").renderTimeout, 45)
+  assert.equal(table.find((e) => e.prefix === "e:").renderTimeout, 5)
+})
+
+test("normalizeTable preserves cmd renderOnEnter", () => {
+  const table = tableFor({
+    prefixes: {
+      "ha:": { kind: "cmd", label: "HA", cmd: "echo {query}", renderResults: true, renderOnEnter: true },
+      "e:": { kind: "cmd", label: "Echo", cmd: "echo {query}", renderResults: true, renderOnEnter: false },
+      "c:": { kind: "cmd", label: "Calc", cmd: "echo {query}", renderResults: true }
+    }
+  })
+  assert.equal(table.find((e) => e.prefix === "ha:").renderOnEnter, true)
+  assert.equal(table.find((e) => e.prefix === "e:").renderOnEnter, false)
+  assert.equal(table.find((e) => e.prefix === "c:").renderOnEnter, true)
+})
+
+test("formatCmdRenderOutput preserves full text and newlines", () => {
+  assert.deepEqual(PrefixModel.formatCmdRenderOutput("  hello\nworld  "), {
+    full: "hello\nworld",
+    label: "hello"
+  })
+  assert.equal(PrefixModel.formatCmdRenderOutput(""), null)
+  assert.equal(PrefixModel.formatCmdRenderOutput("   \n"), null)
+
+  const long = "x".repeat(900)
+  const formatted = PrefixModel.formatCmdRenderOutput(long)
+  assert.ok(formatted)
+  assert.equal(formatted.full.length, 900)
+  assert.equal(formatted.label.length, 900)
+})
+
 test("formatRowLabel falls back to merged prefixes when entry lacks rowLabel", () => {
   const merged = PrefixModel.mergeConfig(PrefixModel.defaultConfig(), {
     prefixes: {

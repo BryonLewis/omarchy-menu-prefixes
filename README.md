@@ -94,6 +94,10 @@ The file doesn't need to exist — without it you get the built-in defaults show
     // "t:": { "kind": "cmd", "label": "Terminal", "fontIcon": "\uf489",
     //         "cmd": "kitty -- {query}" },
 
+    // kind "cmd" + renderResults: run the command and show stdout in the menu.
+    // "echo:": { "kind": "cmd", "label": "Echo", "renderResults": true,
+    //            "cmd": "echo {query}" },
+
     // kind "calc": inline calculator.
     "=": { "kind": "calc", "label": "Calculator", "fontIcon": "\uf1ec" },
 
@@ -135,6 +139,8 @@ Typing `w:hyprland` shows a single row — `Search Wikipedia for "hyprland"` —
 
 `kind: "cmd"` runs a shell command with your input. The row shows the expanded command as subtext; Enter runs it (through `bash -lc`, detached from the shell process).
 
+Set **`renderResults`: true** to run the command and show its stdout in the menu — like the calculator and currency prefixes. With **`renderOnEnter`: true** (the default), the command waits until you press Enter; otherwise it runs as you type. Enter copies the full (byte-capped) output to your clipboard. Output wraps in the row (up to 16 lines visible; the full text still copies). Capture is limited to 8 KiB; wall time defaults to 5 seconds (`renderTimeout` overrides, up to 120). stderr is not shown. The legacy **`render`** key is still accepted as an alias. See [`examples/render-prefix-demo.jsonc`](examples/render-prefix-demo.jsonc) for a quick test (`echo:`, `time:`, `host:`).
+
 Optional **`rowLabel`** overrides the row text for `web` and `cmd` prefixes. Placeholders: `{label}` (entry label, or the prefix when empty), `{query}`, `{prefix}`. Without it, web rows read `Search Google for "…"` and cmd rows read `Run Terminal`.
 
 ```jsonc
@@ -164,7 +170,14 @@ Optional **`rowLabel`** overrides the row text for `web` and `cmd` prefixes. Pla
     // Treat the input itself as shell code ({raw} — no quoting):
     //   run:fastfetch  ->  runs fastfetch
     "run:": { "kind": "cmd", "label": "Run", "fontIcon": "\uf054",
-              "cmd": "{raw}" }
+              "cmd": "{raw}" },
+
+    // Run while typing and show stdout in the menu; Enter copies the output:
+    "echo:": { "kind": "cmd", "label": "Echo", "fontIcon": "\uf0e7",
+               "renderResults": true, "rowLabel": "Echo \"{query}\"",
+               "cmd": "echo {query}" },
+    "time:": { "kind": "cmd", "label": "Time", "fontIcon": "\uf017",
+               "renderResults": true, "cmd": "date '+%H:%M:%S %Z'" }
   }
 }
 ```
@@ -234,7 +247,7 @@ Font glyphs can be written as the literal character or as a `\uXXXX` JSON escape
 - **Calculator** supports `+ - * / % ^` (`**` also works) plus `sqrt`, `cbrt`, `abs`, `pow`, `hypot`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log`, `log2`, `log10`, `exp`, `floor`, `ceil`, `round`, `trunc`, `sign`, `min`, `max`, `pi`, `e`, and scientific notation (`1e3`). `^` is right-associative and binds looser than unary minus, so `-2^2` is `-4` and `2^3^2` is `512`, the way both read on paper. It is a tokenizer and a parser that computes as it parses — not `eval` behind a filter — so an expression has no reachable path to anything but the arithmetic above.
 - **Currency** understands 3-letter ISO codes and the symbols `$ £ € ¥ ₹ ₩` in any position, e.g. `!420 usd to dkk`, `!$420 to dkk`, `!420 EUR to £`. Both source and target currencies are required. The request is pinned to HTTPS (redirects included), times out, and has its response size capped; a rate already on hand is reused instead of refetched.
 - **Web prefixes** open in your default browser via `omarchy launch browser` — the same launcher Omarchy's menu uses, so private-window and focus-stealing behavior match.
-- Calculator and currency results copy to your clipboard on Enter; web/cmd rows run on Enter; file rows open on Enter.
+- Calculator and currency results copy to your clipboard on Enter; web/cmd rows run on Enter; **`cmd` with `renderResults: true`** shows command output in the menu and copies it on Enter; file rows open on Enter.
 - Every prefix row except `cmd` is launched as an **argv**, not as a shell command line: the path, URL, or result it carries is handed to the program as a single argument, so nothing that came off the filesystem or the network is ever re-parsed as shell syntax. `cmd` is the deliberate exception — a shell command line is exactly what you configured there.
 
 ## Security design
@@ -245,7 +258,7 @@ The prefix modes take input from three places the user does not control — the 
 - **`.desktop` files are parsed by the desktop-entry implementation, not by text filters.** `scripts/smart-open.sh` asks GIO for the content type and the registered default application, then either hands the entry to `gio launch` or expands its `Exec=` into an argv under the desktop-entry field-code and quoting rules and `execve`s that. A crafted `Exec=` containing `;`, `|`, `&&`, `$(…)`, or backticks yields inert argv elements, because no shell ever sees it.
 - **Every producer has a byte ceiling.** The currency fetch, the file search, and the provider enumerations all end in `head -c`, so a flooding response or script cannot grow a collector without bound. The network fetch is bounded twice (`--max-filesize` for a declared length, `head -c` for a chunked one) and pinned to HTTPS for both the request and any redirect.
 - **The calculator is a parser, not a filtered `eval`.** It never builds a string for `Function()`; input length and nesting depth are capped, function arity is checked, and the name allowlist is consulted with own-property lookups so inherited names like `constructor` and `__proto__` cannot reach it.
-- **The one deliberate exception is `cmd`.** A `cmd` prefix runs the shell command line you configured, and `{raw}` interpolates your input into it unquoted. That is the feature; prefer `{query}` or `{urlquery}`, which are always quoted.
+- **The one deliberate exception is `cmd`.** A `cmd` prefix runs the shell command line you configured, and `{raw}` interpolates your input into it unquoted. That is the feature; prefer `{query}` or `{urlquery}`, which are always quoted. With **`renderResults: true`**, stdout is byte- and time-capped before it reaches the menu.
 
 If you find something here that doesn't hold, please open an issue.
 
