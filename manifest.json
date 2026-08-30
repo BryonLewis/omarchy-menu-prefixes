@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "com.bryon.omarchy-menu-prefixes",
   "name": "Omarchy Menu Prefixes",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "bryon",
   "description": "The stock Omarchy menu plus configurable search prefixes: file: filesystem search, g:/yt: web searches, custom shell command prefixes through a config file",
   "kinds": [
