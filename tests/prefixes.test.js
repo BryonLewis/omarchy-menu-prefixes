@@ -333,6 +333,8 @@ test("parseCurrencyRateResponse computes rate conversion and handles errors", ()
   assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ status: 422, message: "invalid currency" }), parsed), null)
   assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ rate: "not a number" }), parsed), null)
   assert.equal(PrefixModel.parseCurrencyRateResponse(rawResponse, null), null)
+  assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ base: "EUR", quote: "AOA", rate: 920.51 }), parsed), null)
+  assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ base: "USD", quote: "EUR", rate: 920.51 }), parsed), null)
 })
 
 test("mergeConfig keeps defaults for a missing file section", () => {
