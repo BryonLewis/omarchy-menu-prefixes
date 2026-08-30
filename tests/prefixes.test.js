@@ -317,6 +317,24 @@ test("parseCurrencyQuery handles codes, symbols, and either position", () => {
   assert.equal(PrefixModel.parseCurrencyQuery("420 to dkk"), null) // no source currency
 })
 
+test("parseCurrencyRateResponse computes rate conversion and handles errors", () => {
+  const parsed = { amount: 420, from: "USD", to: "AOA" }
+  const rawResponse = JSON.stringify({ date: "2026-08-28", base: "USD", quote: "AOA", rate: 920.51 })
+  assert.deepEqual(PrefixModel.parseCurrencyRateResponse(rawResponse, parsed), {
+    amount: 420,
+    from: "USD",
+    to: "AOA",
+    converted: 420 * 920.51,
+    rate: 920.51
+  })
+
+  // Invalid responses
+  assert.equal(PrefixModel.parseCurrencyRateResponse("invalid json", parsed), null)
+  assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ status: 422, message: "invalid currency" }), parsed), null)
+  assert.equal(PrefixModel.parseCurrencyRateResponse(JSON.stringify({ rate: "not a number" }), parsed), null)
+  assert.equal(PrefixModel.parseCurrencyRateResponse(rawResponse, null), null)
+})
+
 test("mergeConfig keeps defaults for a missing file section", () => {
   const merged = PrefixModel.mergeConfig(PrefixModel.defaultConfig(), { prefixes: { "w:": { kind: "web", url: "https://w/?q={query}" } } })
   assert.equal(merged.file.prefix, "file:")

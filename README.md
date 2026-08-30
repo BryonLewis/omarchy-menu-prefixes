@@ -12,7 +12,7 @@ inspired by [omarchy-menu-plus](https://github.com/CarlOscarHMJ/omarchy-menu-plu
 | `g:data pipelines` | searches Google for "data pipelines" in your default browser |
 | `yt:lofi beats` | searches YouTube for "lofi beats" in your default browser |
 | `=4*23` | inline calculator — Enter copies the result to your clipboard |
-| `!100 usd to dkk` | live currency conversion (ECB rates) — Enter copies the result |
+| `!100 usd to dkk` | live currency conversion — Enter copies the result |
 | `anything else` | normal app/menu search, completely unchanged |
 
 Every prefix — including `file:`, `g:`, `yt:`, `=`, and `!` — is defined in a single JSONC config file. Add your own prefixes for any website or any shell command, with your own icons. Everything else about the menu (apps, settings, power, fonts, dmenu mode, …) is stock `omarchy.menu`.
