@@ -7,6 +7,6 @@
     "MenuModel.js",
     "BarWidget.qml"
   ],
-  "commit": "3d033d1b00a2070d7553ed48fef587e5cfc3529c",
-  "commitTitle": "Stop the menu from opening on the previous evaluation's answers (#6601)"
+  "commit": "b686ed892d9c3020c3336203f6d34cc75b544e2b",
+  "commitTitle": "Merge pull request #9267 from omacom/fix/close-password-only-sshd"
 }
