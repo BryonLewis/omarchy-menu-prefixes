@@ -38,6 +38,14 @@ omarchy plugin add https://github.com/BryonLewis/omarchy-menu-prefixes
 - `wl-copy`, `curl`, `python-gobject` — standard on an Omarchy install already. `python-gobject` is what resolves a file's default application for `file:` results; without it those rows fall back to plain `xdg-open`.
 - **Network access** — currency conversion calls the free [Frankfurter API](https://frankfurter.dev/) (no API key), over HTTPS only.
 
+### App discovery
+
+App search normally uses the shell's shared app library. If the shell API is
+unavailable, the menu loads `shell/services/AppLibrary.qml` from the running
+`OMARCHY_PATH` until the shared library becomes available again. This preserves
+Omarchy's app filtering, icons, launch feedback and removal behavior without
+requiring app reinstalls or changes to desktop entries.
+
 ### Remove
 
 ```
