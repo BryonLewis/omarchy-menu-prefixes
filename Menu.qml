@@ -90,7 +90,20 @@ Item {
 
   // Shared application engine (entries, hidden filters, icons, launch,
   // removal), owned by the shell and also used by the standalone launcher.
-  readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+  // The injected shell API can be absent after a host lifecycle change.
+  // Load the host's own service only while the shared library is unavailable,
+  // so discovery, hidden-entry filtering, icons and launch behavior stay stock.
+  readonly property var sharedAppLibrary: root.shell ? root.shell.appLibrary : null
+  readonly property var appLibrary: root.sharedAppLibrary || fallbackAppLibrary.item
+  Loader {
+    id: fallbackAppLibrary
+    active: !root.sharedAppLibrary
+    source: root.omarchyPath + "/shell/services/AppLibrary.qml"
+  }
+  onAppLibraryChanged: {
+    // A provider may have been requested before the shell or Loader was ready.
+    if (root.appLibrary && root.providersLoaded["apps"]) root.mergeAppRows()
+  }
   property bool deleteConfirmOpen: false
   property var deleteTarget: null
   onOpenedChanged: if (!opened) { deleteConfirmOpen = false; deleteTarget = null }
