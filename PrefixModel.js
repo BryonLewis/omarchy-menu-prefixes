@@ -185,7 +185,12 @@ function normalizeTable(config) {
       fontIcon: icons.fontIcon,
       appIcon: icons.appIcon,
       url: String(entry.url || ""),
-      cmd: String(entry.cmd || "")
+      cmd: String(entry.cmd || ""),
+      renderResults: cmdRenderResultsEnabled(entry),
+      // Default true: slow commands (Home Assistant, APIs) should wait for Enter.
+      renderOnEnter: cmdRenderResultsEnabled(entry) && entry.renderOnEnter !== false,
+      renderTimeout: cmdRenderResultsEnabled(entry)
+        ? clampInt(entry.renderTimeout, 1, 120, 5) : 5
     })
   }
 
@@ -300,6 +305,17 @@ function expandCommand(template, query) {
 // eval(): the only things it can do are the arithmetic below and the Math
 // calls named in CALC_FUNCTIONS, so an expression has no reachable path to
 // the surrounding QML scope no matter what is typed.
+
+// cmd + renderResults: stdout captured from the configured command. Capped at
+// the producer (`head -c`) so a flooding script cannot grow the collector.
+var CMD_RENDER_MAX_BYTES = 8192
+// Soft cap on wrapped display lines; the full output still copies on Enter.
+var CMD_RENDER_MAX_DISPLAY_LINES = 16
+
+function cmdRenderResultsEnabled(entry) {
+  if (!isPlainObject(entry)) return false
+  return entry.renderResults === true || entry.render === true
+}
 
 // Longest expression accepted. The menu filter can be pasted into and every
 // keystroke re-evaluates, so cap the work per keystroke.
@@ -601,6 +617,15 @@ function parseCurrencyQuery(text) {
 
 // Parses the response from Frankfurter v2 rate endpoint:
 // https://api.frankfurter.dev/v2/rate/{base}/{quote} -> { "date": "...", "base": "...", "quote": "...", "rate": ... }
+// Turn byte-capped command stdout into menu text. Returns null when empty.
+// `full` is what copies to the clipboard; the menu wraps `full` in the row body.
+function formatCmdRenderOutput(raw) {
+  var text = String(raw || "").replace(/\0/g, "").trim()
+  if (!text) return null
+  var firstLine = text.split(/\r?\n/)[0] || text
+  return { full: text, label: firstLine }
+}
+
 function parseCurrencyRateResponse(raw, parsed) {
   try {
     var data = typeof raw === "string" ? JSON.parse(raw) : raw
@@ -628,7 +653,11 @@ if (typeof module !== "undefined" && module.exports) {
     CALC_FUNCTIONS: CALC_FUNCTIONS,
     CALC_CONSTANTS: CALC_CONSTANTS,
     CALC_MAX_LENGTH: CALC_MAX_LENGTH,
+    CMD_RENDER_MAX_BYTES: CMD_RENDER_MAX_BYTES,
+    CMD_RENDER_MAX_DISPLAY_LINES: CMD_RENDER_MAX_DISPLAY_LINES,
+    cmdRenderResultsEnabled: cmdRenderResultsEnabled,
     CURRENCY_SYMBOLS: CURRENCY_SYMBOLS,
+    formatCmdRenderOutput: formatCmdRenderOutput,
     tokenizeCalc: tokenizeCalc,
     stripJsonc: stripJsonc,
     shellQuote: shellQuote,

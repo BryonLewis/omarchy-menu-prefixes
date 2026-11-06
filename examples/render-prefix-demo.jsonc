@@ -1,0 +1,40 @@
+// Quick demo for cmd prefixes with `"renderResults": true`.
+//
+// Copy into ~/.config/omarchy/extensions/omarchy-menu-prefixes.jsonc
+// (merge the "prefixes" block with your existing config), then open the menu:
+//
+//   echo:hello world     → press Enter, shows wrapped output; Enter copies it
+//   time:                → press Enter, shows the current date/time
+//   host:                 → press Enter, shows your hostname
+//
+// Without `"renderResults": true`, the same prefixes would only run on Enter
+// and show no output in the menu. The legacy `"render"` key still works.
+
+{
+  "prefixes": {
+    "echo:": {
+      "kind": "cmd",
+      "label": "Echo",
+      "fontIcon": "\uf0e7",
+      "renderResults": true,
+      "rowLabel": "Echo \"{query}\"",
+      "cmd": "echo {query}"
+    },
+    "time:": {
+      "kind": "cmd",
+      "label": "Time",
+      "fontIcon": "\uf017",
+      "renderResults": true,
+      "rowLabel": "Current time",
+      "cmd": "date '+%A %Y-%m-%d %H:%M:%S %Z'"
+    },
+    "host:": {
+      "kind": "cmd",
+      "label": "Host",
+      "fontIcon": "\uf233",
+      "renderResults": true,
+      "rowLabel": "Hostname",
+      "cmd": "hostname"
+    }
+  }
+}
