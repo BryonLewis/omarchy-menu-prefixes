@@ -7,6 +7,6 @@
     "MenuModel.js",
     "BarWidget.qml"
   ],
-  "commit": "3d033d1b00a2070d7553ed48fef587e5cfc3529c",
-  "commitTitle": "Stop the menu from opening on the previous evaluation's answers (#6601)"
+  "commit": "f97d3e7dc80e1f3ff39b142bbd330d537fe7c674",
+  "commitTitle": "Stop hiding the pointer at startup (#17999)"
 }
